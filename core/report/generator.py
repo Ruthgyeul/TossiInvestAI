@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import structlog
 
 from core.config import settings
+from core.db import store as db
 from core.events.publisher import publish_event
 from core.fund.manager import fund_manager
 from core.market_data.collector import collect_market_snapshot
@@ -184,10 +185,14 @@ async def generate_and_publish(
     report_type: ReportType,
     correlation_id: str | None = None,
 ) -> None:
-    """리포트 생성 → 마크다운 파일 저장 → 보유 종목 파이차트 생성 → `report_ready` 이벤트 발행.
+    """리포트 생성 → 마크다운 파일 저장 → 그래프 생성 → `report_ready` 이벤트 발행.
 
     `/api/v1/reports/generate`가 202로 즉시 응답한 뒤 백그라운드로 실행하는 지연 작업이다
     (docs/INTERNAL_API.md "동기 vs 지연 응답").
+
+    docs/REPORT.md가 명시한 8종 중 6종(보유 비중·손익 기여·거래량 변화·자산 추이·
+    포트폴리오 수익률·누적 수익률)을 실데이터로 생성한다. 업종 분포·시장 지수 비교는
+    섹터 분류·지수 데이터 소스가 없어(위 "2. 지수 현황" 참고) 생성하지 않는다.
     """
     markets: list[Market] = ["KR", "US"] if market == "ALL" else [market]  # type: ignore[list-item]
 
@@ -208,6 +213,46 @@ async def generate_and_publish(
                 h["symbol"]: h["quantity"] * h["currentPrice"] for h in portfolio["holdings"]
             }
             chart_paths.append(str(chart.render_holdings_pie_chart(holdings_value)))
+
+            pnl_by_symbol = {
+                h["symbol"]: (h["currentPrice"] - h["avgPrice"]) * h["quantity"]
+                for h in portfolio["holdings"]
+            }
+            chart_paths.append(str(chart.render_pnl_contribution_chart(pnl_by_symbol)))
+
+        volume_by_symbol: dict[str, float] = {}
+        for m in markets:
+            watchlist_items = await get_watchlist(m)
+            symbols = [item["symbol"] for item in watchlist_items]
+            if not symbols:
+                continue
+            snapshot = await collect_market_snapshot(m, symbols)
+            for symbol, data in snapshot["prices"].items():
+                if "volume_ratio" in data:
+                    volume_by_symbol[symbol] = data["volume_ratio"]
+        if volume_by_symbol:
+            chart_paths.append(str(chart.render_volume_histogram(volume_by_symbol)))
+
+        # 시계열(자산 추이·수익률)은 simulation_portfolio_snapshots에만 존재한다 — LIVE는
+        # 스냅샷 테이블이 아직 없어(daily_pnl 미사용) 시계열 그래프를 생성할 수 없다.
+        if mode == "SIMULATION":
+            snapshots = await db.get_recent_simulation_snapshots()
+            if len(snapshots) >= 2:
+                dates = [s["snapshot_at"].strftime("%m-%d %H:%M") for s in snapshots]
+                values = [float(s["total_value_krw"]) for s in snapshots]
+                chart_paths.append(str(chart.render_asset_value_chart(dates, values)))
+
+                first_value = values[0] or 1.0
+                period_returns = [(v / first_value - 1) * 100 for v in values]
+                chart_paths.append(
+                    str(chart.render_portfolio_return_chart(dates, period_returns))
+                )
+
+                seed = settings.INITIAL_SEED_KRW
+                cumulative_returns = [(v - seed) / seed * 100 for v in values]
+                chart_paths.append(
+                    str(chart.render_cumulative_return_chart(dates, cumulative_returns))
+                )
     except Exception as e:  # noqa: BLE001 — 그래프 생성 실패가 텍스트 리포트 발송을 막으면 안 된다
         log.warning("chart_render_failed", error=str(e))
 

@@ -298,6 +298,18 @@ async def set_control_flags(
         await session.commit()
 
 
+async def get_recent_simulation_snapshots(limit: int = 30) -> list[dict[str, Any]]:
+    """core/report/chart.py 시계열 그래프(자산 추이·수익률)에서 사용.
+
+    core/trading/loop.py `publish_status_update`가 매 루프마다 적재하는
+    simulation_portfolio_snapshots를 오래된 순으로 반환한다.
+    """
+    rows = await fetch_all(
+        "simulation_portfolio_snapshots", order_by="snapshot_at", descending=True, limit=limit
+    )
+    return list(reversed(rows))
+
+
 async def get_long_term_memory(market: Market) -> dict[str, Any]:
     """gateway/claude.py L2 캐시 레이어에서 사용 (docs/BIN.md).
 

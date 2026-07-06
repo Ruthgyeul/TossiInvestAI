@@ -1,7 +1,7 @@
 """KR·US 트레이딩 루프 진입점. APScheduler가 시장별로 독립 실행한다 (docs/BIN.md)."""
 
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import structlog
@@ -155,11 +155,14 @@ async def publish_status_update() -> None:
     simulation_status = await fund_manager.get_portfolio_status("SIMULATION")
 
     # /simstatus의 MDD·샤프 지수 계산용 시계열 스냅샷 (docs/FUND_MANAGER.md).
+    # snapshot_at은 db.insert()의 created_at 자동 채움 대상이 아니므로 직접 지정해야 한다
+    # (지정하지 않으면 NOT NULL 제약 위반으로 매 루프마다 실패한다).
     await db.insert(
         "simulation_portfolio_snapshots",
         {
             "total_value_krw": simulation_status["totalValueKrw"],
             "cash_krw": simulation_status["cashKrw"],
+            "snapshot_at": datetime.now(timezone.utc),
         },
     )
 
