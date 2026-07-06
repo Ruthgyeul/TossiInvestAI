@@ -80,7 +80,7 @@
 ## 디렉토리 구조
 
 ```
-trading-bot/
+TossInvestAI/
 ├── CLAUDE.md                        # 최상위 컨텍스트 (필독)
 ├── docs/                            # 상세 설계 문서
 │   ├── ARCHITECTURE.md
