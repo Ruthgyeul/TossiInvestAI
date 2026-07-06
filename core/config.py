@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     REDIS_URL: str
 
+    # 내부 API — discord-bot이 보내는 요청을 검증하는 공유 토큰 (docs/INTERNAL_API.md)
+    CORE_INTERNAL_API_TOKEN: str
+
     # 자금 — INITIAL_SEED_KRW는 손익 계산 기준점이므로 절대 변경 금지 (docs/SAFETY.md)
     INITIAL_SEED_KRW: int = 500_000
     CASH_BUFFER_RATIO: float = 0.15

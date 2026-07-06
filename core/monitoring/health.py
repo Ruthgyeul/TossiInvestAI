@@ -23,5 +23,9 @@ async def collect_health_snapshot() -> HealthSnapshot:
 
 
 def check_thresholds(snapshot: HealthSnapshot) -> list[str]:
-    """임계값을 초과한 항목의 경고 메시지 목록을 반환한다."""
+    """임계값을 초과한 항목의 경고 메시지 목록을 반환한다.
+
+    초과 항목이 있으면 Redis `pubsub:events`로 `health_alert` 이벤트를 발행해
+    discord-bot이 `#stock-error`에 알린다 (docs/INTERNAL_API.md).
+    """
     raise NotImplementedError

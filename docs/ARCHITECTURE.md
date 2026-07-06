@@ -91,7 +91,9 @@ TossInvestAI/
 │   ├── LOGGING.md
 │   ├── FUND_MANAGER.md
 │   ├── TOSS_API.md
-│   └── CODING_RULES.md
+│   ├── CODING_RULES.md
+│   ├── SELF_IMPROVEMENT.md
+│   └── INTERNAL_API.md
 │
 ├── .env                             # 비밀 키 (git 커밋 금지)
 ├── .env.example                     # 환경변수 템플릿
@@ -120,10 +122,14 @@ TossInvestAI/
 │   │   │   ├── report.ts
 │   │   │   └── alert.ts
 │   │   └── events/
+│   │       └── ready.ts
 │   ├── package.json
 │   └── tsconfig.json
 │
 ├── core/                            # Python 트레이딩 코어
+│   ├── config.py                    # 설정 단일 진입점 (pydantic-settings)
+│   ├── models.py                    # 공유 도메인 모델 (Order·Decision·GateResult 등)
+│   │
 │   ├── trading/
 │   │   ├── loop.py                  # KR·US 트레이딩 루프 (APScheduler)
 │   │   ├── decision.py              # Claude API 직접 호출 진입점
@@ -164,6 +170,9 @@ TossInvestAI/
 │   ├── fund/
 │   │   └── manager.py               # 자금 배분·재투자·API 비용 추적
 │   │
+│   ├── simulation/
+│   │   └── portfolio.py             # 가상 포트폴리오 (SIMULATION 모드 전용)
+│   │
 │   ├── market_data/
 │   │   ├── collector.py             # 시세·뉴스 수집
 │   │   ├── indicators.py            # RSI·MACD·EMA·볼린저밴드
@@ -202,6 +211,11 @@ TossInvestAI/
 │   ├── daily/
 │   ├── weekly/
 │   └── monthly/
+│
+├── deploy/
+│   └── systemd/                     # 실제 systemd 유닛 파일 (docs/DEPLOYMENT.md)
+│       ├── bin-core.service
+│       └── bin-discord.service
 │
 └── tests/
     ├── test_safety.py

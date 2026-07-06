@@ -78,6 +78,7 @@ class SafetyGate:
         raise NotImplementedError
 
     async def _is_market_open(self, market: str) -> bool:
+        """core/toss/market.py의 `is_market_open`으로 위임 — Redis `market_open:{market}` 캐시 공유."""
         raise NotImplementedError
 
     async def _is_regular_session(self, market: str) -> bool:

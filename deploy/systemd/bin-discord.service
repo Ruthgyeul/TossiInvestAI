@@ -1,0 +1,13 @@
+[Unit]
+Description=Bin Discord Bot
+After=network.target
+
+[Service]
+WorkingDirectory=/home/ruthgyeul/TossInvestAI/discord-bot
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

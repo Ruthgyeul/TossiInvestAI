@@ -1,0 +1,13 @@
+[Unit]
+Description=Bin Trading Core
+After=network.target postgresql.service redis.service
+
+[Service]
+WorkingDirectory=/home/ruthgyeul/TossInvestAI/core
+ExecStart=/home/ruthgyeul/TossInvestAI/venv/bin/python3 -m agent.loop
+Restart=always
+RestartSec=10
+Environment=TZ=Asia/Seoul
+
+[Install]
+WantedBy=multi-user.target

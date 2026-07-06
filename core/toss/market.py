@@ -34,10 +34,13 @@ async def get_stock_warnings(symbol: str) -> dict:
 
 
 async def is_market_open(market: Market) -> bool:
-    """GET /api/v1/market-calendar/{market} — 하드코딩 금지, 항상 API 기준 (CLAUDE.md 절대 규칙 4)."""
+    """GET /api/v1/market-calendar/{market} — 하드코딩 금지, 항상 API 기준 (CLAUDE.md 절대 규칙 4).
+
+    Redis `market_open:{market}` 60s 캐시 우선.
+    """
     raise NotImplementedError
 
 
 async def is_regular_session(market: Market) -> bool:
-    """정규장 여부 — 금액 주문(AMOUNT) 허용 판단에 사용."""
+    """정규장 여부 — 금액 주문(AMOUNT) 허용 판단에 사용. Redis `market_open:{market}` 캐시 공유."""
     raise NotImplementedError
