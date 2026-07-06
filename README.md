@@ -7,20 +7,26 @@ Raspberry Pi 5에서 24/7 실행되는 AI 자동 주식 트레이딩 봇.
 
 ## 현재 상태
 
-`docs/CODING_RULES.md`의 개발 순서(Phase 1~5) 기준 **Phase 1~4 구현 완료**.
-Safety Gate·FundManager(SIMULATION/LIVE 분리)·AI Gateway(Claude 직접 호출 + Prompt
-Caching)·트레이딩 루프·Discord 봇·리포트·자기평가·자동 백업까지 동작한다.
+`docs/CODING_RULES.md`의 개발 순서(Phase 1~5) 기준 **코드 구현은 Phase 1~5 전체 완료**.
 
-Phase 5(실전 전환) 관련으로 아직 남은 항목:
-- `core/strategy/backtest.py`, `core/strategy/paper_trading.py` — 백테스트/모의투자 엔진 미구현
-- `core/strategy/us/overnight.py` — "익일 갭 대응"의 구체적 동작이 문서에 정의되어 있지 않아 미구현
-  (개발자 결정 필요, 디스패치에서도 제외되어 있어 안전함)
-- `core/market_data/news.py`의 `fetch_news` — 실제 뉴스 소스(API/RSS 등)가 아직 정해지지
-  않아 미구현 (Gemini 요약 파이프라인 자체는 준비되어 있음)
-- 자기개선 루프(`docs/SELF_IMPROVEMENT.md`)의 개선 후보 자동 추출·승인 워크플로
+- Safety Gate(11개 조건)·FundManager(SIMULATION/LIVE 완전 분리, 주간 재배분 감사 기록)
+- AI Gateway(Claude 직접 호출 + Prompt Caching, Gemini 뉴스 요약, DeepSeek 폴백)
+- 트레이딩 루프(KR·US, 규칙 기반 필터 → Claude 판단), Discord 봇, 리포트(8종 차트 전부 연결)
+- 자기평가(Reflection) + 자기개선 파이프라인(개선 후보 제안 → 백테스트 게이트 →
+  Discord 승인/반려/롤백, `docs/SELF_IMPROVEMENT.md`)
+- 백테스트 엔진(`core/strategy/backtest.py`), 모의투자 신호 검증(`paper_trading.py`)
+- US 오버나이트 갭 대응 전략, 무료 RSS 뉴스 소스, 자동 백업/복구, 헬스 모니터링
 
-실전(`SIMULATION=false`) 전환 전 반드시 `docs/SAFETY.md`의 SIMULATION 체크리스트를
-통과하고 최소 2주 이상 리허설을 거친다.
+**남은 것은 코드가 아니라 운영 절차**다 — `docs/SAFETY.md`의 SIMULATION 체크리스트를
+통과하고 `SIMULATION=true`로 **최소 2주 이상 실제 리허설**을 거친 뒤에만
+`SIMULATION=false`(실전)로 전환한다. 2주 미만이면 `/simulate off` 자체가 코드 레벨에서
+거부된다(`core/api/routes.py:post_simulate`). 이후 소액 실거래 1주 + 7일 모니터링까지
+문제가 없어야 정식 운용으로 넘어간다(`docs/CODING_RULES.md` Phase 5, 18~20단계).
+
+자기개선 파이프라인은 개선 후보 제안·백테스트 검증·승인/반려/롤백까지 자동화되어
+있지만, 실제 `core/trading/prompts/*.md` 프롬프트 문구 수정이나 전략 파라미터 코드
+변경은 승인 이후 개발자가 직접 반영한다(에이전트가 코드를 자율 수정하는 루프는
+CLAUDE.md 절대 규칙 10에 따라 만들지 않는다).
 
 ---
 
@@ -48,11 +54,11 @@ docs/                   # 상세 설계 문서 (아래 목록 참고)
 core/                   # Python 트레이딩 코어
 ├── main.py              # bin-core.service 진입점 (스케줄러 + 내부 API를 한 프로세스에서 기동)
 ├── config.py / models.py
-├── trading/            # 트레이딩 루프, 규칙 기반 필터→Claude 직접 호출, 실행기, 자기평가, 프롬프트
+├── trading/            # 트레이딩 루프, 규칙 기반 필터→Claude 직접 호출, 실행기, 자기평가·자기개선, 프롬프트
 ├── gateway/             # Claude·Gemini·DeepSeek 클라이언트
 ├── api/                 # discord-bot ↔ core 내부 HTTP API 서버
 ├── toss/                # 토스증권 Open API 클라이언트
-├── strategy/            # 전략 베이스·백테스트(Phase 5 예정)·KR/US 전략
+├── strategy/            # 전략 베이스·백테스트·모의투자·KR/US 전략(오버나이트 포함)
 ├── safety/              # Safety Gate
 ├── fund/                # 자금 배분·API 비용 추적 (LIVE/SIMULATION 완전 분리)
 ├── simulation/          # 가상 포트폴리오 (SIMULATION 모드)
@@ -128,9 +134,10 @@ cd discord-bot && npm run typecheck && npm run build
 ```
 
 ### 개발 순서
-`docs/CODING_RULES.md`의 Phase 1~5를 순서대로 따른다 — 항상 `DRY_RUN=true`로 시작하고,
-실전 전환 전 `SIMULATION=true`로 최소 2주 이상 리허설을 거친다 (`docs/SAFETY.md`).
-현재 Phase 1~4는 구현이 끝났고 남은 항목은 위 "현재 상태" 참고.
+`docs/CODING_RULES.md`의 Phase 1~5(1~17단계)는 코드 구현이 모두 끝났다. 남은 18~20단계는
+코드가 아닌 운영 절차다 — 항상 `DRY_RUN=true`로 개발·디버깅을 마친 뒤, `SIMULATION=true`로
+최소 2주 이상 실제 리허설(`docs/SAFETY.md` 체크리스트 통과)을 거치고, 이후 소액 실거래
+1주 + 7일 모니터링까지 문제없어야 정식 운용으로 전환한다.
 
 ---
 

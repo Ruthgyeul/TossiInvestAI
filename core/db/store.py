@@ -17,6 +17,8 @@ from core.db.models import (
     ControlFlags,
     DailyPnl,
     DecisionRecord,
+    FundRebalance,
+    LivePortfolioSnapshot,
     MarketEvent,
     Order as OrderRow,
     PaperTrade,
@@ -52,6 +54,8 @@ _MODELS: list[type[DeclarativeBase]] = [
     SimulationDailyPnl,
     SimulationPortfolioSnapshot,
     ControlFlags,
+    FundRebalance,
+    LivePortfolioSnapshot,
 ]
 # Position은 core.db.models.Position이지만 core.models.Order와 이름이 겹쳐 별칭 처리한다.
 from core.db.models import Position as PositionRow  # noqa: E402
@@ -298,6 +302,32 @@ async def set_control_flags(
         await session.commit()
 
 
+async def get_simulation_started_at() -> datetime | None:
+    """SIMULATION이 연속으로 유지된 시작 시각 (docs/SAFETY.md "실전 전환 전 2주 이상 필수")."""
+    async with _session() as session:
+        stmt = select(ControlFlags.simulation_started_at).where(ControlFlags.id == 1)
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
+
+async def set_simulation_started_at(started_at: datetime | None) -> None:
+    """SIMULATION 시작 시각을 기록/초기화한다. 프로세스 재시작으로 리허설 기간이
+    소리 없이 리셋되지 않도록 DB에 영속화한다."""
+    stmt = pg_insert(ControlFlags).values(
+        id=1, simulation_started_at=started_at, updated_at=datetime.now(timezone.utc)
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["id"],
+        set_={
+            "simulation_started_at": stmt.excluded.simulation_started_at,
+            "updated_at": stmt.excluded.updated_at,
+        },
+    )
+    async with _session() as session:
+        await session.execute(stmt)
+        await session.commit()
+
+
 async def get_recent_simulation_snapshots(limit: int = 30) -> list[dict[str, Any]]:
     """core/report/chart.py 시계열 그래프(자산 추이·수익률)에서 사용.
 
@@ -306,6 +336,14 @@ async def get_recent_simulation_snapshots(limit: int = 30) -> list[dict[str, Any
     """
     rows = await fetch_all(
         "simulation_portfolio_snapshots", order_by="snapshot_at", descending=True, limit=limit
+    )
+    return list(reversed(rows))
+
+
+async def get_recent_live_snapshots(limit: int = 30) -> list[dict[str, Any]]:
+    """get_recent_simulation_snapshots의 LIVE 대응 — live_portfolio_snapshots에서 조회한다."""
+    rows = await fetch_all(
+        "live_portfolio_snapshots", order_by="snapshot_at", descending=True, limit=limit
     )
     return list(reversed(rows))
 
@@ -357,3 +395,58 @@ async def get_long_term_memory(market: Market) -> dict[str, Any]:
         "reflection_summary": reflection_summary,
         "symbol_stats": symbol_stats,
     }
+
+
+async def get_latest_deployed_strategy_version(market: Market | None = None) -> dict[str, Any] | None:
+    """가장 최근 승인·배포된 버전 (docs/SELF_IMPROVEMENT.md "approved_by가 비어 있는 레코드는
+    미승인 상태로 간주한다") — GET /api/v1/version이 "현재 버전"으로 보여줄 유일한 소스."""
+    async with _session() as session:
+        stmt = select(StrategyVersion).where(StrategyVersion.approved_by.is_not(None))
+        if market is not None:
+            stmt = stmt.where(StrategyVersion.market == market)
+        stmt = stmt.order_by(StrategyVersion.deployed_at.desc()).limit(1)
+        result = await session.execute(stmt)
+        row = result.scalars().first()
+    return _row_to_dict(row) if row is not None else None
+
+
+async def get_pending_strategy_candidates(market: Market | None = None) -> list[dict[str, Any]]:
+    """개발자 승인을 기다리는 후보 (approved_by IS NULL) — `/version candidates`."""
+    async with _session() as session:
+        stmt = select(StrategyVersion).where(StrategyVersion.approved_by.is_(None))
+        if market is not None:
+            stmt = stmt.where(StrategyVersion.market == market)
+        stmt = stmt.order_by(StrategyVersion.proposed_at.desc())
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+    return [_row_to_dict(row) for row in rows]
+
+
+async def approve_strategy_version(version_id: int, approved_by: str) -> dict[str, Any] | None:
+    """후보를 승인해 배포 상태로 전환한다 — approved_by + deployed_at(지금)을 채운다."""
+    async with _session() as session:
+        stmt = select(StrategyVersion).where(StrategyVersion.id == version_id)
+        result = await session.execute(stmt)
+        row = result.scalars().first()
+        if row is None:
+            return None
+        row.approved_by = approved_by
+        row.deployed_at = datetime.now(timezone.utc)
+        await session.commit()
+        await session.refresh(row)
+        return _row_to_dict(row)
+
+
+async def get_deployed_strategy_version_by_name(strategy_version: str) -> dict[str, Any] | None:
+    """롤백 대상 조회 — 과거에 실제로 승인·배포된 이력이 있는 버전만 롤백 가능하다."""
+    async with _session() as session:
+        stmt = (
+            select(StrategyVersion)
+            .where(StrategyVersion.strategy_version == strategy_version)
+            .where(StrategyVersion.approved_by.is_not(None))
+            .order_by(StrategyVersion.deployed_at.desc())
+            .limit(1)
+        )
+        result = await session.execute(stmt)
+        row = result.scalars().first()
+    return _row_to_dict(row) if row is not None else None

@@ -6,6 +6,8 @@
 // 동시에 표시된다").
 import { EmbedBuilder } from "discord.js";
 
+import { applyBinBranding } from "./common.js";
+
 export interface Holding {
   symbol: string;
   market: "KR" | "US";
@@ -65,9 +67,11 @@ export function buildStatusEmbed(data: StatusData): EmbedBuilder {
   const updatedAt = new Date(data.simulation.updatedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
   lines.push(`  🔄 마지막 업데이트  ${updatedAt} KST`);
 
-  return new EmbedBuilder()
-    .setColor(0x0984e3)
-    .setTitle("[빈] 포트폴리오 현황")
-    .setDescription(lines.join("\n"))
-    .setTimestamp();
+  return applyBinBranding(
+    new EmbedBuilder()
+      .setColor(0x0984e3)
+      .setTitle("[빈] 포트폴리오 현황")
+      .setDescription(lines.join("\n"))
+      .setTimestamp(),
+  );
 }

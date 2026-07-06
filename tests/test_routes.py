@@ -6,6 +6,7 @@ DB·토스 API·FundManager 등 실제 협력 객체는 monkeypatch로 격리하
 
 import asyncio
 import json as json_lib
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 import pytest
@@ -18,7 +19,7 @@ from core.fund.manager import fund_manager
 from core.monitoring.health import HEALTH_REDIS_KEY
 
 
-def _mocked_post_request(path: str, body: dict) -> object:
+def _mocked_post_request(path: str, body: dict, match_info: dict | None = None) -> object:
     """JSON 바디를 읽을 수 있는 POST 목 요청 — make_mocked_request의 payload는
     StreamReader 프로토콜(`at_eof`/`read`)을 요구해 bytes를 직접 넘길 수 없다."""
     protocol = mock.Mock()
@@ -26,7 +27,8 @@ def _mocked_post_request(path: str, body: dict) -> object:
     reader = streams.StreamReader(protocol, 2**16, loop=asyncio.get_event_loop())
     reader.feed_data(json_lib.dumps(body).encode())
     reader.feed_eof()
-    return make_mocked_request("POST", path, payload=reader)
+    kwargs = {"match_info": match_info} if match_info is not None else {}
+    return make_mocked_request("POST", path, payload=reader, **kwargs)
 
 
 @pytest.mark.asyncio
@@ -205,3 +207,380 @@ async def test_post_resume_clears_and_persists_flags(
     assert body["success"] is True
     assert settings.EMERGENCY_STOP is False
     assert persisted == {"emergency_stop": False, "kr_stop": False, "us_stop": False}
+
+
+def test_average_holding_days_matches_fifo_buy_sell_pairs() -> None:
+    trades = [
+        {
+            "symbol": "005930",
+            "action": "BUY",
+            "quantity": 10,
+            "created_at": datetime(2026, 7, 1, tzinfo=timezone.utc),
+        },
+        {
+            "symbol": "005930",
+            "action": "SELL",
+            "quantity": 10,
+            "created_at": datetime(2026, 7, 3, tzinfo=timezone.utc),
+        },
+        {
+            "symbol": "AAPL",
+            "action": "BUY",
+            "quantity": 5,
+            "created_at": datetime(2026, 7, 1, tzinfo=timezone.utc),
+        },
+        {
+            "symbol": "AAPL",
+            "action": "SELL",
+            "quantity": 5,
+            "created_at": datetime(2026, 7, 2, tzinfo=timezone.utc),
+        },
+    ]
+
+    # 005930: 10주 2일 보유, AAPL: 5주 1일 보유 → 가중평균 (10*2 + 5*1) / 15 = 25/15
+    assert routes._average_holding_days(trades) == pytest.approx(25 / 15)
+
+
+def test_average_holding_days_zero_when_no_completed_round_trip() -> None:
+    trades = [
+        {
+            "symbol": "005930",
+            "action": "BUY",
+            "quantity": 10,
+            "created_at": datetime(2026, 7, 1, tzinfo=timezone.utc),
+        }
+    ]
+
+    assert routes._average_holding_days(trades) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_get_orders_returns_action_quantity_price(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _fetch_all(table, filters=None, *, order_by=None, descending=False, limit=None):  # noqa: ANN001
+        assert table == "orders"
+        return [
+            {
+                "client_order_id": "BIN-KR-ABC123",
+                "symbol": "005930",
+                "market": "KR",
+                "action": "BUY",
+                "quantity": 2,
+                "price": 74_800.0,
+                "status": "FILLED",
+                "created_at": datetime(2026, 7, 6, tzinfo=timezone.utc),
+            }
+        ]
+
+    monkeypatch.setattr(routes.db, "fetch_all", _fetch_all)
+
+    request = make_mocked_request("GET", "/api/v1/orders")
+    response = await routes.get_orders(request)
+    body = json_lib.loads(response.body)
+
+    assert body["orders"] == [
+        {
+            "orderId": "BIN-KR-ABC123",
+            "symbol": "005930",
+            "market": "KR",
+            "action": "BUY",
+            "quantity": 2,
+            "price": 74_800.0,
+            "status": "FILLED",
+            "createdAt": "2026-07-06T00:00:00+00:00",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_simstatus_includes_avg_holding_days(monkeypatch: pytest.MonkeyPatch) -> None:
+    trades = [
+        {
+            "symbol": "005930",
+            "market": "KR",
+            "action": "BUY",
+            "quantity": 10,
+            "fill_price": 74_000.0,
+            "commission_krw": 100,
+            "pnl_krw": None,
+            "created_at": datetime(2026, 7, 1, tzinfo=timezone.utc),
+        },
+        {
+            "symbol": "005930",
+            "market": "KR",
+            "action": "SELL",
+            "quantity": 10,
+            "fill_price": 75_000.0,
+            "commission_krw": 100,
+            "pnl_krw": 9_800,
+            "created_at": datetime(2026, 7, 3, tzinfo=timezone.utc),
+        },
+    ]
+
+    async def _fetch_all(table, filters=None, *, order_by=None, descending=False, limit=None):  # noqa: ANN001
+        if table == "simulation_trades":
+            return trades
+        if table == "simulation_portfolio_snapshots":
+            return []
+        if table == "safety_rejections":
+            return []
+        if table == "simulation_positions":
+            return []
+        raise AssertionError(f"예상치 못한 테이블 조회: {table}")
+
+    async def _get_api_usage_month_summary() -> dict:
+        return {"cost_krw": 1_000, "call_count": 5}
+
+    monkeypatch.setattr(routes.db, "fetch_all", _fetch_all)
+    monkeypatch.setattr(routes.db, "get_api_usage_month_summary", _get_api_usage_month_summary)
+
+    request = make_mocked_request("GET", "/api/v1/simstatus")
+    response = await routes.get_simstatus(request)
+    body = json_lib.loads(response.body)
+
+    assert body["avgHoldingDays"] == pytest.approx(2.0)
+    assert body["tradeCount"] == 2
+    assert body["winRate"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_post_simulate_off_rejected_before_two_weeks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """docs/SAFETY.md·CLAUDE.md 규칙 11 — SIMULATION 2주 미만이면 LIVE 전환을 거부한다."""
+    monkeypatch.setattr(settings, "SIMULATION", True)
+
+    async def _get_simulation_started_at() -> datetime:
+        return datetime.now(timezone.utc) - timedelta(days=5)
+
+    monkeypatch.setattr(routes.db, "get_simulation_started_at", _get_simulation_started_at)
+
+    request = _mocked_post_request("/api/v1/control/simulate", {"state": "off"})
+    response = await routes.post_simulate(request)
+    body = json_lib.loads(response.body)
+
+    assert body["success"] is False
+    assert body["simulation"] is True
+    assert "14" in body["reason"]
+    assert settings.SIMULATION is True
+
+
+@pytest.mark.asyncio
+async def test_post_simulate_off_allowed_after_two_weeks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SIMULATION", True)
+
+    async def _get_simulation_started_at() -> datetime:
+        return datetime.now(timezone.utc) - timedelta(days=15)
+
+    monkeypatch.setattr(routes.db, "get_simulation_started_at", _get_simulation_started_at)
+
+    request = _mocked_post_request("/api/v1/control/simulate", {"state": "off"})
+    response = await routes.post_simulate(request)
+    body = json_lib.loads(response.body)
+
+    assert body["success"] is True
+    assert body["simulation"] is False
+    assert settings.SIMULATION is False
+
+
+@pytest.mark.asyncio
+async def test_post_simulate_on_records_start_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "SIMULATION", False)
+    recorded: list[datetime] = []
+
+    async def _set_simulation_started_at(started_at: datetime) -> None:
+        recorded.append(started_at)
+
+    monkeypatch.setattr(routes.db, "set_simulation_started_at", _set_simulation_started_at)
+
+    request = _mocked_post_request("/api/v1/control/simulate", {"state": "on"})
+    response = await routes.post_simulate(request)
+    body = json_lib.loads(response.body)
+
+    assert body["success"] is True
+    assert body["simulation"] is True
+    assert settings.SIMULATION is True
+    assert len(recorded) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_version_returns_default_when_no_deployed_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _get_latest_deployed(market=None):  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(routes.db, "get_latest_deployed_strategy_version", _get_latest_deployed)
+
+    request = make_mocked_request("GET", "/api/v1/version")
+    response = await routes.get_version(request)
+    body = json_lib.loads(response.body)
+
+    assert body["strategyVersion"] == "v1.0.0"
+    assert body["deployedAt"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_version_candidates_lists_pending(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _get_pending(market=None):  # noqa: ANN001
+        return [
+            {
+                "id": 1,
+                "market": "KR",
+                "strategy_version": "v1.1.0",
+                "prompt_version": "system_kr_v1",
+                "based_on": "v1.0.0",
+                "change_summary": "RSI 임계값 조정",
+                "backtest_result": {"win_rate": 0.6},
+                "proposed_at": datetime(2026, 7, 6, tzinfo=timezone.utc),
+            }
+        ]
+
+    monkeypatch.setattr(routes.db, "get_pending_strategy_candidates", _get_pending)
+
+    request = make_mocked_request("GET", "/api/v1/version/candidates")
+    response = await routes.get_version_candidates(request)
+    body = json_lib.loads(response.body)
+
+    assert body["candidates"][0]["id"] == 1
+    assert body["candidates"][0]["changeSummary"] == "RSI 임계값 조정"
+    assert body["candidates"][0]["backtestResult"] == {"win_rate": 0.6}
+
+
+@pytest.mark.asyncio
+async def test_post_version_approve_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _approve(version_id, approved_by):  # noqa: ANN001
+        assert version_id == 1
+        assert approved_by == "discord:Ruthgyeul"
+        return {"id": 1, "approved_by": approved_by}
+
+    monkeypatch.setattr(routes.db, "approve_strategy_version", _approve)
+
+    request = _mocked_post_request(
+        "/api/v1/version/1/approve", {"approvedBy": "discord:Ruthgyeul"}, match_info={"id": "1"}
+    )
+    response = await routes.post_version_approve(request)
+    body = json_lib.loads(response.body)
+
+    assert body["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_post_version_approve_missing_candidate(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _approve(version_id, approved_by):  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(routes.db, "approve_strategy_version", _approve)
+
+    request = _mocked_post_request(
+        "/api/v1/version/999/approve", {"approvedBy": "discord:Ruthgyeul"}, match_info={"id": "999"}
+    )
+    response = await routes.post_version_approve(request)
+    body = json_lib.loads(response.body)
+
+    assert body["success"] is False
+
+
+@pytest.mark.asyncio
+async def test_post_version_reject_deletes_pending_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fetch_one(table, filters):  # noqa: ANN001
+        assert table == "strategy_versions"
+        assert filters == {"id": 1}
+        return {"id": 1, "approved_by": None}
+
+    deleted: list[dict] = []
+
+    async def _delete(table, filters):  # noqa: ANN001
+        deleted.append(filters)
+
+    monkeypatch.setattr(routes.db, "fetch_one", _fetch_one)
+    monkeypatch.setattr(routes.db, "delete", _delete)
+
+    request = _mocked_post_request("/api/v1/version/1/reject", {}, match_info={"id": "1"})
+    response = await routes.post_version_reject(request)
+    body = json_lib.loads(response.body)
+
+    assert body["success"] is True
+    assert deleted == [{"id": 1}]
+
+
+@pytest.mark.asyncio
+async def test_post_version_reject_refuses_already_deployed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fetch_one(table, filters):  # noqa: ANN001
+        return {"id": 1, "approved_by": "discord:Ruthgyeul"}
+
+    async def _delete_should_not_be_called(table, filters):  # noqa: ANN001
+        raise AssertionError("이미 배포된 버전은 삭제하면 안 된다")
+
+    monkeypatch.setattr(routes.db, "fetch_one", _fetch_one)
+    monkeypatch.setattr(routes.db, "delete", _delete_should_not_be_called)
+
+    request = _mocked_post_request("/api/v1/version/1/reject", {}, match_info={"id": "1"})
+    response = await routes.post_version_reject(request)
+    body = json_lib.loads(response.body)
+
+    assert body["success"] is False
+
+
+@pytest.mark.asyncio
+async def test_post_version_rollback_reinserts_target_as_new_deployment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _get_deployed_by_name(strategy_version):  # noqa: ANN001
+        assert strategy_version == "v1.0.0"
+        return {
+            "market": "KR",
+            "strategy_version": "v1.0.0",
+            "prompt_version": "system_kr_v1",
+            "backtest_result": {"win_rate": 0.65},
+        }
+
+    async def _get_latest_deployed(market):  # noqa: ANN001
+        return {"strategy_version": "v1.1.0"}
+
+    inserted: list[dict] = []
+
+    async def _insert(table, values):  # noqa: ANN001
+        inserted.append(values)
+        return values
+
+    monkeypatch.setattr(routes.db, "get_deployed_strategy_version_by_name", _get_deployed_by_name)
+    monkeypatch.setattr(routes.db, "get_latest_deployed_strategy_version", _get_latest_deployed)
+    monkeypatch.setattr(routes.db, "insert", _insert)
+
+    request = _mocked_post_request(
+        "/api/v1/version/rollback",
+        {"strategyVersion": "v1.0.0", "approvedBy": "discord:Ruthgyeul"},
+    )
+    response = await routes.post_version_rollback(request)
+    body = json_lib.loads(response.body)
+
+    assert body["success"] is True
+    assert inserted[0]["strategy_version"] == "v1.0.0"
+    assert inserted[0]["based_on"] == "v1.1.0"
+    assert inserted[0]["approved_by"] == "discord:Ruthgyeul"
+    assert inserted[0]["deployed_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_post_version_rollback_rejects_unknown_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _get_deployed_by_name(strategy_version):  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(routes.db, "get_deployed_strategy_version_by_name", _get_deployed_by_name)
+
+    request = _mocked_post_request(
+        "/api/v1/version/rollback",
+        {"strategyVersion": "v9.9.9", "approvedBy": "discord:Ruthgyeul"},
+    )
+    response = await routes.post_version_rollback(request)
+    body = json_lib.loads(response.body)
+
+    assert body["success"] is False

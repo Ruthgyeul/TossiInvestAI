@@ -2,6 +2,9 @@
 
 from datetime import date
 
+import pytest
+from pydantic import ValidationError
+
 from core.config import Settings
 
 _REQUIRED_FIELDS = {
@@ -48,3 +51,22 @@ def test_defaults_start_in_dry_run_and_simulation() -> None:
     assert Settings.model_fields["DRY_RUN"].default is False
     assert Settings.model_fields["SIMULATION"].default is True
     assert Settings.model_fields["INITIAL_SEED_KRW"].default == 500_000
+
+
+def test_initial_seed_krw_cannot_be_reassigned_at_runtime() -> None:
+    """CLAUDE.md 절대 규칙 3 — 손익 계산 기준점이므로 런타임 재할당을 코드로 차단한다."""
+    settings = _settings()
+
+    with pytest.raises(ValidationError):
+        settings.INITIAL_SEED_KRW = 999_999
+
+
+def test_other_runtime_flags_remain_mutable() -> None:
+    """SIMULATION/DRY_RUN/EMERGENCY_STOP 등은 운영 중 전환 가능해야 한다 (core/api/routes.py)."""
+    settings = _settings()
+
+    settings.SIMULATION = False
+    settings.EMERGENCY_STOP = True
+
+    assert settings.SIMULATION is False
+    assert settings.EMERGENCY_STOP is True

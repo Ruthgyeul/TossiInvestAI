@@ -3,6 +3,7 @@
 from datetime import date
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,8 +31,10 @@ class Settings(BaseSettings):
     # 내부 API — discord-bot이 보내는 요청을 검증하는 공유 토큰 (docs/INTERNAL_API.md)
     CORE_INTERNAL_API_TOKEN: str
 
-    # 자금 — INITIAL_SEED_KRW는 손익 계산 기준점이므로 절대 변경 금지 (docs/SAFETY.md)
-    INITIAL_SEED_KRW: int = 500_000
+    # 자금 — INITIAL_SEED_KRW는 손익 계산 기준점이므로 절대 변경 금지 (docs/SAFETY.md).
+    # frozen=True로 최초 로드 이후 런타임 재할당을 코드 레벨에서 차단한다
+    # (CLAUDE.md 절대 규칙 3 — 값을 바꾸려면 .env를 고쳐 프로세스를 재기동해야 한다).
+    INITIAL_SEED_KRW: int = Field(default=500_000, frozen=True)
     CASH_BUFFER_RATIO: float = 0.15
 
     # Safety Gate

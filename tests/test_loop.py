@@ -34,6 +34,115 @@ def _reset_stop_flags(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_build_state_snapshot_wires_popular_and_fear_greed_from_collector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """docs/BIN.md StateSnapshot의 toss_popular_top10/fear_greed_index가 collector 결과로
+    실제로 채워져야 한다 (예전에는 항상 빈 값이었다)."""
+
+    async def _get_watchlist(market):  # noqa: ANN001
+        return [{"symbol": "005930", "market": "KR", "priority": 0}]
+
+    async def _collect_market_snapshot(market, symbols):  # noqa: ANN001
+        return {
+            "prices": {"005930": {"price": 75_000}},
+            "holdings": [],
+            "buying_power": 100_000,
+            "exchange_rate_krw_usd": 1382.5,
+            "toss_popular_top10": ["005930", "000660"],
+            "fear_greed_index": 62,
+        }
+
+    async def _get_events_today(market):  # noqa: ANN001
+        return []
+
+    async def _get_portfolio_status(mode):  # noqa: ANN001
+        return {"totalValueKrw": 500_000, "cashBufferKrw": 75_000, "todayPnlKrw": 0}
+
+    async def _get_operating_funds_krw(mode):  # noqa: ANN001
+        return 425_000.0
+
+    async def _estimated_api_cost_krw():
+        return 0.0
+
+    monkeypatch.setattr(loop, "get_watchlist", _get_watchlist)
+    monkeypatch.setattr(loop, "collect_market_snapshot", _collect_market_snapshot)
+    monkeypatch.setattr(loop.calendar, "get_events_today", _get_events_today)
+    monkeypatch.setattr(loop.fund_manager, "get_portfolio_status", _get_portfolio_status)
+    monkeypatch.setattr(loop.fund_manager, "get_operating_funds_krw", _get_operating_funds_krw)
+    monkeypatch.setattr(loop.fund_manager, "estimated_api_cost_krw", _estimated_api_cost_krw)
+
+    state = await loop._build_state_snapshot("KR")
+
+    assert state.toss_popular_top10 == ["005930", "000660"]
+    assert state.fear_greed_index == 62
+
+
+@pytest.mark.asyncio
+async def test_publish_status_update_records_live_snapshot_when_live(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """core/report/generator.py의 LIVE 자산 추이 차트가 동작하려면 live_portfolio_snapshots가
+    LIVE 모드에서도 적재되어야 한다 (예전에는 simulation_portfolio_snapshots만 있었다)."""
+    monkeypatch.setattr(settings, "SIMULATION", False)
+    monkeypatch.setattr(settings, "DRY_RUN", False)  # run_mode == "LIVE"
+
+    async def _get_portfolio_status(mode):  # noqa: ANN001
+        return {"totalValueKrw": 600_000, "cashKrw": 50_000}
+
+    inserted: list[tuple[str, dict]] = []
+
+    async def _insert(table, values):  # noqa: ANN001
+        inserted.append((table, values))
+        return values
+
+    async def _publish_event(event_type, *, mode, market, payload, correlation_id=None):  # noqa: ANN001
+        pass
+
+    monkeypatch.setattr(loop.fund_manager, "get_portfolio_status", _get_portfolio_status)
+    monkeypatch.setattr(loop.db, "insert", _insert)
+    monkeypatch.setattr(loop, "publish_event", _publish_event)
+
+    await loop.publish_status_update()
+
+    tables = [table for table, _ in inserted]
+    assert "simulation_portfolio_snapshots" in tables
+    assert "live_portfolio_snapshots" in tables
+    live_row = next(values for table, values in inserted if table == "live_portfolio_snapshots")
+    assert live_row["total_value_krw"] == 600_000
+    assert live_row["cash_krw"] == 50_000
+
+
+@pytest.mark.asyncio
+async def test_publish_status_update_skips_live_snapshot_in_simulation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SIMULATION", True)
+    monkeypatch.setattr(settings, "DRY_RUN", False)
+
+    async def _get_portfolio_status(mode):  # noqa: ANN001
+        return {"totalValueKrw": 500_000, "cashKrw": 75_000}
+
+    inserted: list[tuple[str, dict]] = []
+
+    async def _insert(table, values):  # noqa: ANN001
+        inserted.append((table, values))
+        return values
+
+    async def _publish_event(event_type, *, mode, market, payload, correlation_id=None):  # noqa: ANN001
+        pass
+
+    monkeypatch.setattr(loop.fund_manager, "get_portfolio_status", _get_portfolio_status)
+    monkeypatch.setattr(loop.db, "insert", _insert)
+    monkeypatch.setattr(loop, "publish_event", _publish_event)
+
+    await loop.publish_status_update()
+
+    tables = [table for table, _ in inserted]
+    assert tables == ["simulation_portfolio_snapshots"]
+
+
+@pytest.mark.asyncio
 async def test_run_loop_skips_when_emergency_stop_active(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

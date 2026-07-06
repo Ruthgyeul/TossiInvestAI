@@ -43,7 +43,7 @@ class Trade(Base):
 
 
 class Order(Base):
-    """주문 이력 (미체결 포함)."""
+    """주문 이력 (미체결 포함). docs/INTERNAL_API.md `GET /api/v1/orders` 응답과 매칭된다."""
 
     __tablename__ = "orders"
 
@@ -51,6 +51,9 @@ class Order(Base):
     client_order_id: Mapped[str] = mapped_column(String(50), unique=True)
     symbol: Mapped[str] = mapped_column(String(20))
     market: Mapped[str] = mapped_column(String(2))
+    action: Mapped[str] = mapped_column(String(4))
+    quantity: Mapped[int]
+    price: Mapped[float | None] = mapped_column(Numeric)
     status: Mapped[str] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -147,13 +150,18 @@ class StrategyVersion(Base):
     __tablename__ = "strategy_versions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    market: Mapped[str] = mapped_column(String(2))
     strategy_version: Mapped[str] = mapped_column(String(20))
     prompt_version: Mapped[str] = mapped_column(String(30))
     based_on: Mapped[str | None] = mapped_column(String(20))
     change_summary: Mapped[str | None]
     backtest_result: Mapped[dict | None] = mapped_column(JSON)
     approved_by: Mapped[str | None] = mapped_column(String(50))
-    deployed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # 후보 제안 시각 — 항상 채워진다 (proposed_at은 db.insert()의 created_at 자동 채움 대상이
+    # 아니므로 자기개선 파이프라인에서 직접 지정한다).
+    proposed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # 승인 전에는 NULL — approved_by가 채워질 때만 지금 시각으로 설정한다.
+    deployed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Reflection(_ModeMixin, Base):
@@ -249,13 +257,49 @@ class ControlFlags(Base):
     emergency_stop: Mapped[bool] = mapped_column(default=False)
     kr_stop: Mapped[bool] = mapped_column(default=False)
     us_stop: Mapped[bool] = mapped_column(default=False)
+    # SIMULATION이 연속으로 유지된 시작 시각 — LIVE 전환 전 "2주 이상 필수"
+    # (CLAUDE.md 절대 규칙 11, docs/SAFETY.md)를 판정하는 기준. 재시작에도 유지되어야 하므로
+    # emergency_stop과 함께 이 단일 행에 영속화한다.
+    simulation_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class FundRebalance(_ModeMixin, Base):
+    """주간 자금 재배분 실행 기록 (docs/FUND_MANAGER.md "수익금 재배분 규칙").
+
+    weekly_rebalance()가 매주 계산한 결과를 영구 기록해, 코드 외부에서 임의로 재현·변경할 수
+    없는 감사 기록으로 남긴다.
+    """
+
+    __tablename__ = "fund_rebalances"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    total_value_krw: Mapped[int]
+    api_cost_covered_krw: Mapped[int]
+    reinvested_krw: Mapped[int]
+    buffer_added_krw: Mapped[int]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class SimulationPortfolioSnapshot(Base):
     """시뮬레이션 포트폴리오 스냅샷."""
 
     __tablename__ = "simulation_portfolio_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    total_value_krw: Mapped[int]
+    cash_krw: Mapped[int]
+    snapshot_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class LivePortfolioSnapshot(Base):
+    """실전 포트폴리오 스냅샷 — simulation_portfolio_snapshots의 LIVE 대응.
+
+    core/report/generator.py의 자산 추이·수익률 시계열 차트가 LIVE 모드에서도
+    생성될 수 있도록 트레이딩 루프가 매 틱마다 적재한다.
+    """
+
+    __tablename__ = "live_portfolio_snapshots"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     total_value_krw: Mapped[int]

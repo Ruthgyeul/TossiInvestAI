@@ -25,8 +25,22 @@ _REFLECTION_SYSTEM_PROMPT = (
     "1. 오늘 매매가 적절했는가\n"
     "2. 놓친 매수/매도 기회는 무엇인가\n"
     "3. Safety Gate 거부 중 옳았던 것은 무엇인가\n"
-    "4. 내일 개선할 점은 무엇인가"
+    "4. 내일 개선할 점은 무엇인가\n\n"
+    "마지막 줄은 반드시 `PROPOSED_CHANGE:`로 시작해야 한다(자기개선 파이프라인이 이 줄만 "
+    "파싱한다). 프롬프트 문구나 전략 파라미터에 구체적인 개선안이 있으면 "
+    "`PROPOSED_CHANGE: <한 문장 요약>`으로, 없으면 `PROPOSED_CHANGE: 없음`으로 적어라."
 )
+
+
+def _extract_proposed_change(content_md: str) -> str | None:
+    """docs/SELF_IMPROVEMENT.md "개선안 초안 생성" — Claude 응답의 `PROPOSED_CHANGE:` 줄만
+    파싱한다(별도 Claude 호출 없이 하루 1회 Reflection 결과를 재사용, 하드 금지 사항 마지막 항목)."""
+    for line in reversed(content_md.splitlines()):
+        stripped = line.strip()
+        if stripped.upper().startswith("PROPOSED_CHANGE:"):
+            value = stripped.split(":", 1)[1].strip()
+            return None if value in ("", "없음") else value
+    return None
 
 
 def _summarize_trades(trades: list[dict]) -> str:
@@ -88,11 +102,20 @@ async def run_reflection(market: Market) -> None:
     rejections = await db.get_today_rejections(market)
 
     content_md = await _call_claude_reflection(market, trades, rejections)
+    proposed_change = _extract_proposed_change(content_md)
 
     now = datetime.now(_KST)
     full_content = f"# [빈] {market} 자기평가 — {now:%Y-%m-%d} (장 마감 후)\n\n{content_md}"
 
-    await db.insert("reflections", {"market": market, "mode": mode, "content_md": full_content})
+    await db.insert(
+        "reflections",
+        {
+            "market": market,
+            "mode": mode,
+            "content_md": full_content,
+            "proposed_change": proposed_change,
+        },
+    )
     _reflection_filename(market, now).write_text(full_content, encoding="utf-8")
 
     log.info("reflection_completed", market=market, mode=mode)
@@ -102,3 +125,11 @@ async def run_reflection(market: Market) -> None:
         market=market,
         payload={"market": market, "contentMd": full_content[:3800]},
     )
+
+    if proposed_change:
+        from core.trading.self_improvement import propose_candidate
+
+        try:
+            await propose_candidate(market, proposed_change)
+        except Exception as e:  # noqa: BLE001 — 후보 제안 실패가 Reflection 자체를 실패시키면 안 된다
+            log.warning("self_improvement_propose_failed", market=market, error=str(e))

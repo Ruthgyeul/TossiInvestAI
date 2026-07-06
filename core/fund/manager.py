@@ -131,11 +131,31 @@ class FundManager:
             reinvested_krw += int(overflow)
             buffer_added_krw -= int(overflow)
 
-        return RebalanceResult(
+        result = RebalanceResult(
             api_cost_covered_krw=api_cost_krw,
             reinvested_krw=reinvested_krw,
             buffer_added_krw=buffer_added_krw,
         )
+        # 계산만 하고 끝나면 "코드 외부에서 임의 변경 불가"(docs/FUND_MANAGER.md)를 보장할 수
+        # 없다 — 매주 실행 결과를 영구 기록해 감사 가능한 재배분 이력으로 남긴다.
+        await db.insert(
+            "fund_rebalances",
+            {
+                "mode": mode,
+                "total_value_krw": int(total_value),
+                "api_cost_covered_krw": result.api_cost_covered_krw,
+                "reinvested_krw": result.reinvested_krw,
+                "buffer_added_krw": result.buffer_added_krw,
+            },
+        )
+        return result
+
+    async def get_last_rebalance(self, mode: Mode = "LIVE") -> dict | None:
+        """가장 최근 주간 재배분 기록 (Discord `/fund` 등에서 참고)."""
+        rows = await db.fetch_all(
+            "fund_rebalances", {"mode": mode}, order_by="created_at", descending=True, limit=1
+        )
+        return rows[0] if rows else None
 
     async def record_api_usage(
         self,

@@ -10,6 +10,7 @@ from core.strategy.base import BaseStrategy
 from core.strategy.kr.mean_reversion import MeanReversionStrategy
 from core.strategy.kr.momentum import MomentumStrategy as KRMomentumStrategy
 from core.strategy.us.momentum import MomentumStrategy as USMomentumStrategy
+from core.strategy.us.overnight import OvernightStrategy
 
 log = structlog.get_logger(__name__)
 
@@ -18,8 +19,13 @@ log = structlog.get_logger(__name__)
 # 상속해 추가하고 이 목록에 등록한다).
 _STRATEGIES_BY_MARKET: dict[Market, list[BaseStrategy]] = {
     "KR": [MeanReversionStrategy(), KRMomentumStrategy()],
-    "US": [USMomentumStrategy()],
+    "US": [OvernightStrategy(), USMomentumStrategy()],
 }
+
+
+def get_registered_strategies(market: Market) -> list[BaseStrategy]:
+    """core/trading/self_improvement.py가 백테스트 검증 대상 전략을 조회할 때 사용한다."""
+    return _STRATEGIES_BY_MARKET.get(market, [])
 
 
 async def rule_based_filter(state: StateSnapshot) -> Decision | None:

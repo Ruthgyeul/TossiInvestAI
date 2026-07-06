@@ -10,6 +10,7 @@ import {
   buildSafetyRejectionEmbed,
 } from "../embeds/alert.js";
 import { buildInfoEmbed } from "../embeds/info.js";
+import { buildNewsEmbed } from "../embeds/news.js";
 import { buildReportEmbed, ReportEmbedData } from "../embeds/report.js";
 import { buildBuyEmbed, buildSellEmbed, TradeEmbedData } from "../embeds/trade.js";
 import type { StatusData } from "../embeds/status.js";
@@ -26,7 +27,9 @@ export interface PubSubEvent {
     | "report_ready"
     | "backtest_complete"
     | "status_update"
-    | "reflection_ready";
+    | "reflection_ready"
+    | "news_summary"
+    | "version_candidate_ready";
   mode: "LIVE" | "SIMULATION" | "DRY_RUN";
   market: "KR" | "US" | null;
   correlation_id: string | null;
@@ -37,8 +40,9 @@ export interface PubSubEvent {
 async function logRaw(client: Client, event: PubSubEvent): Promise<void> {
   const channel = await getChannel(client, "log");
   if (!channel) return;
-  const line = `[${event.mode}] ${event.event_type} ${JSON.stringify(event.payload)}`.slice(0, 1900);
-  await channel.send(line).catch((err) => console.error("log_channel_send_failed", err));
+  const line = `[${event.mode}] ${event.event_type} ${JSON.stringify(event.payload)}`.slice(0, 4000);
+  const embed = buildInfoEmbed("[빈] 이벤트 로그", `\`\`\`\n${line}\n\`\`\``);
+  await channel.send({ embeds: [embed] }).catch((err) => console.error("log_channel_send_failed", err));
 }
 
 async function handleTradeExecuted(client: Client, event: PubSubEvent): Promise<void> {
@@ -168,6 +172,34 @@ async function handleReflectionReady(client: Client, event: PubSubEvent): Promis
   await channel?.send({ embeds: [embed] });
 }
 
+async function handleNewsSummary(client: Client, event: PubSubEvent): Promise<void> {
+  const payload = event.payload as { symbol: string; summary: string };
+  const embed = buildNewsEmbed({ symbol: payload.symbol, market: event.market ?? "KR", summary: payload.summary });
+  const channel = await getChannel(client, "news");
+  await channel?.send({ embeds: [embed] });
+}
+
+async function handleVersionCandidateReady(client: Client, event: PubSubEvent): Promise<void> {
+  const payload = event.payload as {
+    id: number;
+    strategyVersion: string;
+    changeSummary: string;
+    backtestResult: Record<string, number>;
+  };
+  const lines = [
+    `#${payload.id} [${event.market}] ${payload.strategyVersion}`,
+    payload.changeSummary,
+    `승률 ${((payload.backtestResult.win_rate ?? 0) * 100).toFixed(1)}% | ` +
+      `샤프 ${(payload.backtestResult.sharpe_ratio ?? 0).toFixed(2)} | ` +
+      `MDD ${((payload.backtestResult.mdd ?? 0) * 100).toFixed(2)}%`,
+    "",
+    `\`/version approve id:${payload.id}\` 또는 \`/version reject id:${payload.id}\``,
+  ];
+  const embed = buildInfoEmbed("[빈] 🧪 개선 후보 제안 — 승인 대기", lines.join("\n"));
+  const channel = await getChannel(client, "system");
+  await channel?.send({ embeds: [embed] });
+}
+
 async function dispatch(client: Client, event: PubSubEvent): Promise<void> {
   switch (event.event_type) {
     case "trade_executed":
@@ -190,6 +222,12 @@ async function dispatch(client: Client, event: PubSubEvent): Promise<void> {
       break;
     case "reflection_ready":
       await handleReflectionReady(client, event);
+      break;
+    case "news_summary":
+      await handleNewsSummary(client, event);
+      break;
+    case "version_candidate_ready":
+      await handleVersionCandidateReady(client, event);
       break;
     case "backtest_complete":
       await handleBacktestComplete(client, event);

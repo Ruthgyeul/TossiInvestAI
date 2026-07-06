@@ -4,7 +4,7 @@ import { Client, REST, Routes } from "discord.js";
 import { commands } from "../commands/index.js";
 import { config } from "../config.js";
 import { getStatus } from "../lib/coreClient.js";
-import { updateStatusEmbed } from "../lib/statusChannel.js";
+import { restoreStatusMessageId, updateStatusEmbed } from "../lib/statusChannel.js";
 
 export async function onReady(client: Client): Promise<void> {
   if (!client.user) {
@@ -17,6 +17,7 @@ export async function onReady(client: Client): Promise<void> {
   });
 
   try {
+    await restoreStatusMessageId(client);
     const status = await getStatus();
     await updateStatusEmbed(client, status);
   } catch (err) {
