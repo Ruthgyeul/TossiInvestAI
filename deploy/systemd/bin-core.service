@@ -3,8 +3,8 @@ Description=Bin Trading Core
 After=network.target postgresql.service redis.service
 
 [Service]
-WorkingDirectory=/home/ruthgyeul/TossInvestAI/core
-ExecStart=/home/ruthgyeul/TossInvestAI/venv/bin/python3 -m agent.loop
+WorkingDirectory=/home/ruthgyeul/TossInvestAI
+ExecStart=/home/ruthgyeul/TossInvestAI/venv/bin/python3 -m core.main
 Restart=always
 RestartSec=10
 Environment=TZ=Asia/Seoul

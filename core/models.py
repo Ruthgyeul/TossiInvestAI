@@ -39,8 +39,31 @@ class Decision:
     reason: str
     risk_level: Literal["LOW", "MEDIUM", "HIGH"]
 
-    def to_order(self, market: Market, client_order_id: str) -> Order:
-        raise NotImplementedError
+    def to_order(
+        self, market: Market, client_order_id: str, reference_price: float | None = None
+    ) -> Order:
+        """Safety Gate 검증용 Order로 변환한다.
+
+        지정가는 self.price로 금액을 계산하고, 시장가(price 없음)는 호출자가
+        전달한 현재가(reference_price)로 추정 금액을 계산한다 (docs/SAFETY.md 5·9번 조건).
+        """
+        if self.action == "HOLD":
+            raise ValueError("HOLD 결정은 주문으로 변환할 수 없다")
+
+        unit_price = self.price if self.price is not None else reference_price
+        if unit_price is None:
+            raise ValueError("시장가 주문의 예상 금액을 계산할 기준가가 없다")
+
+        return Order(
+            symbol=self.symbol,
+            market=market,
+            action=self.action,  # type: ignore[arg-type]
+            quantity=self.quantity,
+            order_type=self.order_type,
+            price=self.price,
+            amount_krw=int(unit_price * self.quantity),
+            client_order_id=client_order_id,
+        )
 
 
 @dataclass

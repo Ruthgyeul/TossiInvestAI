@@ -1,8 +1,38 @@
 // core 트레이딩 코어 내부 HTTP API 클라이언트. 모든 요청에 Bearer 토큰을 싣는다 (docs/INTERNAL_API.md).
+//
+// Node 18+ 전역 fetch를 사용한다 — 새 HTTP 클라이언트 의존성을 추가하지 않는다.
+import { config } from "../config.js";
 import type { Holding, PortfolioStatus } from "../embeds/status.js";
 
+const REQUEST_TIMEOUT_MS = 5_000;
+
+export class CoreApiError extends Error {}
+
 async function request<T>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<T> {
-  throw new Error("Not implemented");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${config.core.apiUrl}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${config.core.apiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+
+    if (!response.ok && response.status !== 202) {
+      throw new CoreApiError(`core API ${method} ${path} -> HTTP ${response.status}`);
+    }
+    return (await response.json()) as T;
+  } catch (err) {
+    if (err instanceof CoreApiError) throw err;
+    throw new CoreApiError(`core API ${method} ${path} 요청 실패: ${(err as Error).message}`);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export interface OrderResult {
@@ -20,7 +50,15 @@ export function getHoldings(market?: "KR" | "US"): Promise<{ holdings: Holding[]
   return request("GET", market ? `/api/v1/holdings?market=${market}` : "/api/v1/holdings");
 }
 
-export function getOrders(): Promise<{ orders: unknown[] }> {
+export interface OrderRecord {
+  orderId: string;
+  symbol: string;
+  market: "KR" | "US";
+  status: string;
+  createdAt: string;
+}
+
+export function getOrders(): Promise<{ orders: OrderRecord[] }> {
   return request("GET", "/api/v1/orders");
 }
 
@@ -57,7 +95,21 @@ export function setDryRun(state: "on" | "off"): Promise<{ success: boolean; dryR
   return request("POST", "/api/v1/control/dryrun", { state });
 }
 
-export function getSimStatus(): Promise<unknown> {
+export interface SimStatus {
+  startedAt: string | null;
+  seedKrw: number;
+  totalValueKrw: number;
+  cumulativeReturnPct: number;
+  mdd: number;
+  sharpeRatio: number;
+  tradeCount: number;
+  winRate: number;
+  rejectionCount: number;
+  apiCostKrw: number;
+  apiCallCount: number;
+}
+
+export function getSimStatus(): Promise<SimStatus> {
   return request("GET", "/api/v1/simstatus");
 }
 
@@ -106,6 +158,6 @@ export function getHealth(): Promise<{
   return request("GET", "/api/v1/health");
 }
 
-export function getVersion(): Promise<{ strategyVersion: string; promptVersion: string; deployedAt: string }> {
+export function getVersion(): Promise<{ strategyVersion: string; promptVersion: string; deployedAt: string | null }> {
   return request("GET", "/api/v1/version");
 }
