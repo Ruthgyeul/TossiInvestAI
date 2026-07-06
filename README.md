@@ -4,8 +4,23 @@ Raspberry Pi 5에서 24/7 실행되는 AI 자동 주식 트레이딩 봇.
 한국장(KRX)과 미국장(US)을 동시에 운용하며, 모든 상태와 결정을 Discord로 공유한다.
 
 > 코드를 작성하거나 수정하기 전에 [`CLAUDE.md`](./CLAUDE.md)와 `docs/` 문서를 먼저 읽는다.
-> 현재 저장소는 아키텍처 스캐폴드 단계이며, 대부분의 함수는 `docs/CODING_RULES.md`의
-> 개발 순서(Phase 1~5)에 따라 채워질 예정이다.
+
+## 현재 상태
+
+`docs/CODING_RULES.md`의 개발 순서(Phase 1~5) 기준 **Phase 1~4 구현 완료**.
+Safety Gate·FundManager(SIMULATION/LIVE 분리)·AI Gateway(Claude 직접 호출 + Prompt
+Caching)·트레이딩 루프·Discord 봇·리포트·자기평가·자동 백업까지 동작한다.
+
+Phase 5(실전 전환) 관련으로 아직 남은 항목:
+- `core/strategy/backtest.py`, `core/strategy/paper_trading.py` — 백테스트/모의투자 엔진 미구현
+- `core/strategy/us/overnight.py` — "익일 갭 대응"의 구체적 동작이 문서에 정의되어 있지 않아 미구현
+  (개발자 결정 필요, 디스패치에서도 제외되어 있어 안전함)
+- `core/market_data/news.py`의 `fetch_news` — 실제 뉴스 소스(API/RSS 등)가 아직 정해지지
+  않아 미구현 (Gemini 요약 파이프라인 자체는 준비되어 있음)
+- 자기개선 루프(`docs/SELF_IMPROVEMENT.md`)의 개선 후보 자동 추출·승인 워크플로
+
+실전(`SIMULATION=false`) 전환 전 반드시 `docs/SAFETY.md`의 SIMULATION 체크리스트를
+통과하고 최소 2주 이상 리허설을 거친다.
 
 ---
 
@@ -31,21 +46,22 @@ Raspberry Pi 5에서 24/7 실행되는 AI 자동 주식 트레이딩 봇.
 CLAUDE.md              # 최상위 컨텍스트 (필독)
 docs/                   # 상세 설계 문서 (아래 목록 참고)
 core/                   # Python 트레이딩 코어
+├── main.py              # bin-core.service 진입점 (스케줄러 + 내부 API를 한 프로세스에서 기동)
 ├── config.py / models.py
-├── trading/            # 트레이딩 루프, Claude 직접 호출 진입점, 프롬프트
+├── trading/            # 트레이딩 루프, 규칙 기반 필터→Claude 직접 호출, 실행기, 자기평가, 프롬프트
 ├── gateway/             # Claude·Gemini·DeepSeek 클라이언트
 ├── api/                 # discord-bot ↔ core 내부 HTTP API 서버
 ├── toss/                # 토스증권 Open API 클라이언트
-├── strategy/            # 전략 베이스·백테스트·KR/US 전략
+├── strategy/            # 전략 베이스·백테스트(Phase 5 예정)·KR/US 전략
 ├── safety/              # Safety Gate
-├── fund/                # 자금 배분·API 비용 추적
+├── fund/                # 자금 배분·API 비용 추적 (LIVE/SIMULATION 완전 분리)
 ├── simulation/          # 가상 포트폴리오 (SIMULATION 모드)
 ├── market_data/         # 시세·지표·뉴스·관심종목
 ├── report/              # 리포트·그래프 생성
-├── db/                  # ORM 모델·CRUD·백업
-├── scheduler/           # APScheduler 태스크
+├── db/                  # ORM 모델·CRUD·백업·Redis 클라이언트
+├── scheduler/           # APScheduler 태스크 (트레이딩 루프·리포트·백업·자기평가·헬스체크)
 ├── monitoring/          # 헬스 모니터링
-└── events/              # 시장 이벤트 캘린더
+└── events/              # 시장 이벤트 캘린더 · Redis pub/sub 발행
 discord-bot/            # Discord.js + TypeScript 봇
 deploy/systemd/         # 실제 systemd 유닛 파일 (docs/DEPLOYMENT.md 참고)
 tests/                  # pytest 단위 테스트
@@ -91,9 +107,30 @@ pip install -r requirements.txt
 cd discord-bot && npm install
 ```
 
+### 실행
+```bash
+# 트레이딩 코어 (스케줄러 + 내부 HTTP API, PostgreSQL·Redis 실행 중이어야 함)
+python -m core.main
+
+# Discord 봇
+cd discord-bot && npm run build && npm start   # 또는 개발 중엔 npm run dev
+```
+운영 환경 배포·systemd 등록은 [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) 참고.
+
+### 테스트
+```bash
+# 트레이딩 코어 단위 테스트 (PostgreSQL·Redis 불필요 — DB/Redis 호출은 monkeypatch로 격리)
+pip install -r requirements.txt
+pytest
+
+# Discord 봇 타입 체크·빌드
+cd discord-bot && npm run typecheck && npm run build
+```
+
 ### 개발 순서
 `docs/CODING_RULES.md`의 Phase 1~5를 순서대로 따른다 — 항상 `DRY_RUN=true`로 시작하고,
 실전 전환 전 `SIMULATION=true`로 최소 2주 이상 리허설을 거친다 (`docs/SAFETY.md`).
+현재 Phase 1~4는 구현이 끝났고 남은 항목은 위 "현재 상태" 참고.
 
 ---
 
