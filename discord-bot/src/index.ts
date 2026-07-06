@@ -36,4 +36,7 @@ client.on("interactionCreate", async (interaction: Interaction) => {
   }
 });
 
-client.login(config.token);
+client.login(config.token).catch((err) => {
+  console.error("[빈] Discord 로그인 실패", err);
+  process.exitCode = 1;
+});
