@@ -3,7 +3,15 @@
 import anthropic
 
 from core.config import settings
-from core.gateway.base import AIGateway
+from core.db import store as db
+from core.fund.manager import fund_manager
+from core.gateway.base import (
+    AIGateway,
+    build_portfolio_block,
+    build_realtime_block,
+    load_system_prompt,
+    parse_decision_json,
+)
 from core.models import Decision, StateSnapshot
 
 _client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
@@ -12,15 +20,16 @@ _client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 class ClaudeGateway(AIGateway):
     async def decide(self, state: StateSnapshot) -> Decision:
         response = await _call_claude(
-            system_prompt=_load_system_prompt(state.market),
-            long_term_memory=_load_long_term_memory(state),
-            realtime_market=_build_realtime_block(state),
-            portfolio_snapshot=_build_portfolio_block(state),
+            system_prompt=load_system_prompt(state.market),
+            long_term_memory=await _load_long_term_memory(state),
+            realtime_market=build_realtime_block(state),
+            portfolio_snapshot=build_portfolio_block(state),
         )
-        _record_usage(response.usage)
-        return _parse_decision(response.content[0].text)
+        await _record_usage(response.usage)
+        return _parse_decision(_extract_text(response))
 
     async def summarize_news(self, articles: list[str]) -> str:
+        """뉴스 요약은 Gemini Gateway 전담 — Claude는 매매 결정만 담당 (docs/BIN.md)."""
         raise NotImplementedError
 
 
@@ -63,29 +72,43 @@ async def _call_claude(
     )
 
 
-def _load_system_prompt(market: str) -> str:
-    raise NotImplementedError
+async def _load_long_term_memory(state: StateSnapshot) -> str:
+    """L2 — 장 시작 시 DB에서 조회, 장중 불변 (docs/BIN.md)."""
+    memory = await db.get_long_term_memory(state.market)
+
+    lines = [
+        f"최근 30일 거래: {memory.get('trade_count', 0)}건 "
+        f"(승률 {memory.get('win_rate', 0):.1%})",
+        f"최근 자기평가 요약: {memory.get('reflection_summary', '없음')}",
+    ]
+    for symbol, stats in memory.get("symbol_stats", {}).items():
+        lines.append(
+            f"{symbol}: 누적 손익 {stats.get('pnl_krw', 0):,} KRW "
+            f"({stats.get('trade_count', 0)}회 거래)"
+        )
+    return "\n".join(lines)
 
 
-def _load_long_term_memory(state: StateSnapshot) -> str:
-    raise NotImplementedError
-
-
-def _build_realtime_block(state: StateSnapshot) -> str:
-    raise NotImplementedError
-
-
-def _build_portfolio_block(state: StateSnapshot) -> str:
-    raise NotImplementedError
-
-
-def _record_usage(usage: anthropic.types.Usage) -> None:
+async def _record_usage(usage: anthropic.types.Usage) -> None:
     """core/fund/manager.py FundManager.record_api_usage 로 위임한다."""
-    raise NotImplementedError
+    await fund_manager.record_api_usage(
+        model=settings.CLAUDE_MODEL,
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        cache_read_tokens=usage.cache_read_input_tokens or 0,
+        cache_write_tokens=usage.cache_creation_input_tokens or 0,
+    )
+
+
+def _extract_text(response: anthropic.types.Message) -> str:
+    block = response.content[0]
+    if not isinstance(block, anthropic.types.TextBlock):
+        raise ValueError(f"Claude 응답이 텍스트 블록이 아님: {type(block).__name__}")
+    return block.text
 
 
 def _parse_decision(text: str) -> Decision:
-    raise NotImplementedError
+    return parse_decision_json(text)
 
 
 claude_gateway = ClaudeGateway()

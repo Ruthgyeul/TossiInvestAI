@@ -18,7 +18,10 @@ class Settings(BaseSettings):
     CLAUDE_MODEL: str = "claude-sonnet-4-6"
     CLAUDE_MAX_TOKENS: int = 512
     GEMINI_API_KEY: str
+    GEMINI_MODEL: str = "gemini-2.0-flash"
     DEEPSEEK_API_KEY: str
+    DEEPSEEK_MODEL: str = "deepseek-chat"
+    DEEPSEEK_MAX_TOKENS: int = 512
 
     # DB
     DATABASE_URL: str
