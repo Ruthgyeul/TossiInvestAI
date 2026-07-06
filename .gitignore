@@ -223,6 +223,11 @@ __marimo__/
 node_modules/
 dist/
 
+# The Python packaging rule `lib/` above matches any directory named `lib`
+# anywhere in the repo, including discord-bot's source lib/ (core API client,
+# event subscriber). Re-include it explicitly.
+!discord-bot/src/lib/
+
 # Runtime data — never committed (docs/LOGGING.md, docs/ARCHITECTURE.md)
 # Ignore directory contents (not the directories themselves) so the empty
 # directory structure stays tracked via .gitkeep — see docs/LOGGING.md tree.

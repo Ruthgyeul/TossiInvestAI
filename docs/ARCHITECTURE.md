@@ -121,8 +121,11 @@ TossInvestAI/
 │   │   │   ├── status.ts
 │   │   │   ├── report.ts
 │   │   │   └── alert.ts
-│   │   └── events/
-│   │       └── ready.ts
+│   │   ├── events/
+│   │   │   └── ready.ts
+│   │   └── lib/                     # core 내부 API 통신 (docs/INTERNAL_API.md)
+│   │       ├── coreClient.ts        # HTTP 클라이언트 (discord-bot → core 요청)
+│   │       └── eventSubscriber.ts   # Redis pubsub:events 구독 (core → discord-bot 알림)
 │   ├── package.json
 │   └── tsconfig.json
 │
@@ -145,6 +148,10 @@ TossInvestAI/
 │   │   ├── claude.py                # Claude API 클라이언트 (Prompt Caching 포함)
 │   │   ├── gemini.py                # Gemini Free Tier 클라이언트
 │   │   └── deepseek.py              # DeepSeek Free Tier 클라이언트
+│   │
+│   ├── api/                         # discord-bot ↔ core 내부 HTTP API 서버 (docs/INTERNAL_API.md)
+│   │   ├── server.py                # aiohttp.web 앱 팩토리 + 인증 미들웨어, 127.0.0.1 바인딩
+│   │   └── routes.py                # 엔드포인트 핸들러 (Phase 4 구현 예정)
 │   │
 │   ├── toss/
 │   │   ├── auth.py                  # OAuth2 토큰 발급·갱신

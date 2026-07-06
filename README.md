@@ -34,6 +34,7 @@ core/                   # Python 트레이딩 코어
 ├── config.py / models.py
 ├── trading/            # 트레이딩 루프, Claude 직접 호출 진입점, 프롬프트
 ├── gateway/             # Claude·Gemini·DeepSeek 클라이언트
+├── api/                 # discord-bot ↔ core 내부 HTTP API 서버
 ├── toss/                # 토스증권 Open API 클라이언트
 ├── strategy/            # 전략 베이스·백테스트·KR/US 전략
 ├── safety/              # Safety Gate

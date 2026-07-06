@@ -3,8 +3,9 @@
 > discord-bot과 core가 서로를 호출하는 유일한 스펙 문서다.
 > `docs/DISCORD.md`의 "Discord 봇은 Python 트레이딩 코어와 Redis pub/sub 또는
 > HTTP 내부 API로 통신한다"는 한 줄을 여기서 구체화한다.
-> 이 문서는 스펙만 정의한다 — 실제 `core/api/` 서버 코드는 Phase 4에서 구현한다
-> (docs/CODING_RULES.md 개발 순서).
+> 이 문서는 스펙만 정의한다 — `core/api/server.py`·`routes.py`,
+> `discord-bot/src/lib/coreClient.ts`·`eventSubscriber.ts`에 자리를 마련해 두었고,
+> 실제 구현은 Phase 4에서 진행한다 (docs/CODING_RULES.md 개발 순서).
 
 ---
 
