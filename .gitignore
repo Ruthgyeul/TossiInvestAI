@@ -216,3 +216,41 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- TossiInvestAI project-specific ---
+
+# Node.js (discord-bot)
+node_modules/
+dist/
+
+# Runtime data — never committed (docs/LOGGING.md, docs/ARCHITECTURE.md)
+# Ignore directory contents (not the directories themselves) so the empty
+# directory structure stays tracked via .gitkeep — see docs/LOGGING.md tree.
+logs/*
+!logs/trading/
+!logs/reports/
+!logs/errors/
+logs/trading/*
+!logs/trading/.gitkeep
+logs/reports/*
+!logs/reports/charts/
+!logs/reports/.gitkeep
+logs/reports/charts/*
+!logs/reports/charts/.gitkeep
+logs/errors/*
+!logs/errors/.gitkeep
+
+backups/*
+!backups/daily/
+!backups/weekly/
+!backups/monthly/
+backups/daily/*
+!backups/daily/.gitkeep
+backups/weekly/*
+!backups/weekly/.gitkeep
+backups/monthly/*
+!backups/monthly/.gitkeep
+
+data/backtest/*
+!data/backtest/.gitkeep
+

@@ -1,0 +1,32 @@
+# AI Gateway
+anthropic>=0.30
+google-generativeai>=0.8     # Gemini
+openai>=1.0                  # DeepSeek (OpenAI 호환)
+
+# 설정·비동기·DB
+pydantic-settings>=2.0
+aiohttp>=3.9
+asyncpg>=0.29
+redis[asyncio]>=5.0
+SQLAlchemy[asyncio]>=2.0
+
+# 스케줄러·로깅
+APScheduler>=3.10
+structlog>=24.0
+
+# 시장 데이터·분석
+pandas>=2.0
+ta>=0.11                     # RSI·MACD·EMA·볼린저밴드
+matplotlib>=3.8              # 리포트 그래프
+
+# Discord 알림 (헬스 모니터링용)
+discord.py>=2.4
+
+# 환경변수
+python-dotenv>=1.0
+
+# 테스트·품질
+pytest>=8.0
+pytest-asyncio>=0.23
+mypy>=1.8
+ruff>=0.4

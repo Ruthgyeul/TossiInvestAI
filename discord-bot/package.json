@@ -1,0 +1,25 @@
+{
+  "name": "bin-discord-bot",
+  "version": "0.1.0",
+  "description": "빈(Bin) 트레이딩 봇 — Discord 인터페이스",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --clean",
+    "dev": "ts-node --esm src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "discord.js": "^14.0.0",
+    "dotenv": "^16.0.0",
+    "ioredis": "^5.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.0.0",
+    "tsup": "^8.0.0"
+  }
+}
