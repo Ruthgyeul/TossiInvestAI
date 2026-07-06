@@ -16,5 +16,7 @@ export const config = {
     apiUrl: process.env.CORE_INTERNAL_API_URL!,
     apiToken: process.env.CORE_INTERNAL_API_TOKEN!,
   },
+  // core와 동일한 라즈베리파이의 Redis — pubsub:events 구독 전용 (docs/INTERNAL_API.md).
+  redisUrl: process.env.REDIS_URL!,
   botAvatarUrl: process.env.BOT_AVATAR_URL ?? "",
 } as const;

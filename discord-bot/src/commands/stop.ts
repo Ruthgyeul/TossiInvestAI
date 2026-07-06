@@ -1,7 +1,10 @@
 // /stop, /stop kr|us — 자동매매 긴급 정지 (docs/SAFETY.md EMERGENCY_STOP)
 import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
 
-export const data = new SlashCommandBuilder()
+import { stopTrading } from "../lib/coreClient.js";
+import type { BotCommand } from "./types.js";
+
+const data = new SlashCommandBuilder()
   .setName("stop")
   .setDescription("전체 자동매매 즉시 중단")
   .addStringOption((opt) =>
@@ -11,6 +14,17 @@ export const data = new SlashCommandBuilder()
     ),
   );
 
-export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
-  throw new Error("Not implemented");
+async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
+  const market = interaction.options.getString("market") as "KR" | "US" | null;
+
+  try {
+    const result = await stopTrading(market ?? undefined);
+    await interaction.reply(
+      `🛑 정지 완료 — 전체: ${result.emergencyStop} / KR: ${result.krStop} / US: ${result.usStop}`,
+    );
+  } catch (err) {
+    await interaction.reply({ content: `정지 요청 실패: ${(err as Error).message}`, ephemeral: true });
+  }
 }
+
+export const commands: BotCommand[] = [{ data, execute }];

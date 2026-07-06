@@ -94,11 +94,10 @@ systemctl status bin-core bin-discord
 journalctl -u bin-core -f
 ```
 
-> ⚠️ **알려진 격차**: `deploy/systemd/bin-core.service`의
-> `ExecStart=.../venv/bin/python3 -m agent.loop`는 아직 존재하지 않는 `agent.loop`
-> 모듈을 가리킨다 — `docs/ARCHITECTURE.md`의 원본 예시를 그대로 유지했다.
-> Phase 4(트레이딩 루프 구현, docs/CODING_RULES.md 개발 순서)에서 실제 진입점이
-> 만들어지면 이 값을 갱신해야 한다. **TODO로 남겨 둔다.**
+> ✅ **Phase 4에서 해결**: `deploy/systemd/bin-core.service`의 `ExecStart`는 이제
+> `core/main.py`(스케줄러 + 내부 API 서버를 한 프로세스로 기동)를 가리키는
+> `python3 -m core.main`을 사용한다. `WorkingDirectory`도 저장소 루트로 수정했다 —
+> `core.main`은 `core/` 패키지를 임포트하므로 `core/` 안에서 실행하면 안 된다.
 >
 > 또한 `deploy/systemd/`의 경로(`/home/ruthgyeul/TossInvestAI`, venv 사용)는
 > `docs/ARCHITECTURE.md` 예시(`/home/pi/trading-bot`, venv 미사용)와 다르다 —

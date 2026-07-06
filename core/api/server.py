@@ -4,14 +4,18 @@ discord-bot의 모든 요청은 `Authorization: Bearer {CORE_INTERNAL_API_TOKEN}
 토큰이 없거나 일치하지 않으면 401 {"error": "unauthorized"}를 반환한다. 다른 토큰으로 재시도하지 않는다.
 """
 
+from collections.abc import Awaitable, Callable
+
 from aiohttp import web
 
 from core.api.routes import register_routes
 from core.config import settings
 
+Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
+
 
 @web.middleware
-async def auth_middleware(request: web.Request, handler: web.Handler) -> web.StreamResponse:
+async def auth_middleware(request: web.Request, handler: Handler) -> web.StreamResponse:
     if request.headers.get("Authorization") != f"Bearer {settings.CORE_INTERNAL_API_TOKEN}":
         return web.json_response({"error": "unauthorized"}, status=401)
     return await handler(request)

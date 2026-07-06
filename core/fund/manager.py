@@ -4,9 +4,11 @@ INITIAL_SEED_KRW는 손익 계산 기준점이므로 최초 설정 이후 절대
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from core.config import settings
 from core.db import store as db
+from core.models import Mode
 from core.toss import account as toss_account
 from core.toss import market as toss_market
 
@@ -168,6 +170,75 @@ class FundManager:
     async def estimated_api_cost_krw(self) -> float:
         """이번 달 추정 API 비용 (KRW 환산)."""
         return await db.get_api_usage_month_krw()
+
+    async def get_portfolio_status(self, mode: Mode, market: str | None = None) -> dict:
+        """`/api/v1/status`용 PortfolioStatus (discord-bot embeds/status.ts와 매칭).
+
+        market이 주어지면 holdings만 해당 시장으로 필터링한다 — 총 자산·현금 버퍼는
+        KR·US가 하나의 자금 풀을 공유하므로(docs/FUND_MANAGER.md) 전체 계정 기준을 유지한다.
+        """
+        exchange_rate = await toss_market.get_exchange_rate()
+
+        if mode == "LIVE":
+            raw_holdings = await toss_account.get_holdings()
+            cash = await toss_account.get_buying_power()
+        else:
+            from core.simulation.portfolio import SimulationPortfolio
+
+            portfolio = await SimulationPortfolio.load()
+            raw_holdings = [
+                {
+                    "symbol": symbol,
+                    "market": pos.market,
+                    "quantity": pos.qty,
+                    "avgPrice": pos.avg_price,
+                }
+                for symbol, pos in portfolio.positions.items()
+            ]
+            cash = portfolio.cash
+
+        holdings = []
+        holdings_value_krw = 0.0
+        for h in raw_holdings:
+            price_data = await toss_market.get_price(h["symbol"])
+            current_price = float(price_data["price"])
+            avg_price = float(h.get("avgPrice", current_price))
+            quantity = int(h["quantity"])
+
+            value = quantity * current_price
+            if h["market"] == "US":
+                value *= exchange_rate
+            holdings_value_krw += value
+
+            holdings.append(
+                {
+                    "symbol": h["symbol"],
+                    "market": h["market"],
+                    "quantity": quantity,
+                    "avgPrice": avg_price,
+                    "currentPrice": current_price,
+                    "pnlPct": (current_price - avg_price) / avg_price if avg_price else 0.0,
+                }
+            )
+
+        total_value_krw = holdings_value_krw + cash
+        today_pnl_krw = await db.get_today_realized_pnl_krw(mode)
+        cumulative_pnl_krw = int(total_value_krw - settings.INITIAL_SEED_KRW)
+
+        if market is not None:
+            holdings = [h for h in holdings if h["market"] == market]
+
+        return {
+            "totalValueKrw": int(total_value_krw),
+            "todayPnlKrw": today_pnl_krw,
+            "todayPnlPct": today_pnl_krw / settings.INITIAL_SEED_KRW,
+            "cumulativePnlKrw": cumulative_pnl_krw,
+            "cumulativePnlPct": cumulative_pnl_krw / settings.INITIAL_SEED_KRW,
+            "cashBufferKrw": int(total_value_krw * settings.CASH_BUFFER_RATIO),
+            "cashKrw": int(cash),
+            "holdings": holdings,
+            "updatedAt": datetime.now(timezone.utc).isoformat(),
+        }
 
 
 fund_manager = FundManager()

@@ -3,7 +3,7 @@ import { EmbedBuilder } from "discord.js";
 
 export interface ReportEmbedData {
   market: "KR" | "US" | "ALL";
-  reportType: "pre_market" | "midday" | "close" | "weekly";
+  reportType: "pre_market" | "midday" | "close" | "weekly" | "on_demand";
   contentMd: string;
   chartFilePaths?: string[];
 }

@@ -6,7 +6,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, Numeric, String
+from sqlalchemy import JSON, CheckConstraint, DateTime, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -59,6 +59,7 @@ class Position(Base):
     """현재 보유 포지션 (매수 시 환율 포함)."""
 
     __tablename__ = "positions"
+    __table_args__ = (UniqueConstraint("symbol", "market", name="uq_positions_symbol_market"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     symbol: Mapped[str] = mapped_column(String(20))
@@ -200,6 +201,9 @@ class SimulationPosition(Base):
     """시뮬레이션 가상 보유 포지션."""
 
     __tablename__ = "simulation_positions"
+    __table_args__ = (
+        UniqueConstraint("symbol", "market", name="uq_simulation_positions_symbol_market"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     symbol: Mapped[str] = mapped_column(String(20))

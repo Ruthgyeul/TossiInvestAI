@@ -19,6 +19,9 @@ pandas>=2.0
 ta>=0.11                     # RSI·MACD·EMA·볼린저밴드
 matplotlib>=3.8              # 리포트 그래프
 
+# 헬스 모니터링
+psutil>=5.9
+
 # Discord 알림 (헬스 모니터링용)
 discord.py>=2.4
 
