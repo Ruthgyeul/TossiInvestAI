@@ -21,6 +21,12 @@ async def get_access_token() -> str:
     return await _issue_token()
 
 
+async def invalidate_token() -> None:
+    """401 invalid-token/expired-token/login-user-not-found 수신 시 캐시를 비워 재발급을 강제한다
+    (docs/TOSS_API.md "에러 코드 전체 목록")."""
+    await get_redis().delete(TOKEN_CACHE_KEY)
+
+
 async def _issue_token() -> str:
     """POST /oauth2/token — grant_type=client_credentials."""
     async with aiohttp.ClientSession() as session:

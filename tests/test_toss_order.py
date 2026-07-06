@@ -53,6 +53,36 @@ async def test_place_limit_order_kr(fake_redis) -> None:
 
 
 @pytest.mark.asyncio
+async def test_place_retries_with_new_client_order_id_on_request_in_progress(
+    fake_redis,
+) -> None:
+    """docs/TOSS_API.md 409 `request-in-progress` → 새 clientOrderId로 재시도."""
+    kr_order = Order(
+        symbol="005930",
+        market="KR",
+        action="BUY",
+        quantity=2,
+        order_type="LIMIT",
+        price=74_800.0,
+        amount_krw=149_600,
+        client_order_id=order.generate_client_order_id("KR"),
+    )
+    with aioresponses() as mocked:
+        mocked.post(
+            f"{_BASE_URL}/api/v1/orders",
+            status=409,
+            payload={"code": "request-in-progress", "message": "동일 주문 처리 중"},
+        )
+        mocked.post(
+            f"{_BASE_URL}/api/v1/orders",
+            payload={"orderId": "order-retry", "status": "PENDING"},
+        )
+        result = await order.place(kr_order)
+
+    assert result == {"orderId": "order-retry", "status": "PENDING"}
+
+
+@pytest.mark.asyncio
 async def test_place_amount_order_us(fake_redis) -> None:
     us_order = Order(
         symbol="AAPL",

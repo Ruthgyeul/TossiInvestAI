@@ -82,6 +82,8 @@ class DecisionRecord(_ModeMixin, Base):
     model_used: Mapped[str] = mapped_column(String(50))
     state_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
     decision: Mapped[dict] = mapped_column(JSON, default=dict)
+    # 개발자가 Discord로 직접 지적한 오판 사례 (docs/SELF_IMPROVEMENT.md "개선 후보의 출처").
+    actual_outcome: Mapped[str | None]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
@@ -136,13 +138,21 @@ class Watchlist(Base):
 
 
 class StrategyVersion(Base):
-    """프롬프트·전략 버전 기록."""
+    """프롬프트·전략 버전 기록 (docs/SELF_IMPROVEMENT.md "버전 관리 및 롤백").
+
+    개발자 승인 없이 deployed_at으로 표시하지 않는다 — approved_by가 비어 있는 레코드는
+    미승인 상태로 간주한다.
+    """
 
     __tablename__ = "strategy_versions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     strategy_version: Mapped[str] = mapped_column(String(20))
     prompt_version: Mapped[str] = mapped_column(String(30))
+    based_on: Mapped[str | None] = mapped_column(String(20))
+    change_summary: Mapped[str | None]
+    backtest_result: Mapped[dict | None] = mapped_column(JSON)
+    approved_by: Mapped[str | None] = mapped_column(String(50))
     deployed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
@@ -154,6 +164,8 @@ class Reflection(_ModeMixin, Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     market: Mapped[str] = mapped_column(String(2))
     content_md: Mapped[str]
+    # 자기개선 후보 초안 — 프롬프트 문구 수정/전략 파라미터 조정 제안 (docs/SELF_IMPROVEMENT.md).
+    proposed_change: Mapped[str | None]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 

@@ -1,10 +1,12 @@
 """주문 생성·정정·취소 (docs/TOSS_API.md). Safety Gate를 통과한 Order만 여기로 전달되어야 한다."""
 
 import uuid
+from dataclasses import replace
 from typing import Any
 
 from core.models import Market, Order
 from core.toss import client
+from core.toss.client import TossApiError
 
 
 def generate_client_order_id(market: Market) -> str:
@@ -28,14 +30,30 @@ def _order_payload(order: Order) -> dict[str, Any]:
 
 
 async def place(order: Order) -> dict:
-    """POST /api/v1/orders."""
-    return await client.request(
-        "POST",
-        "/api/v1/orders",
-        "ORDER",
-        json=_order_payload(order),
-        account_required=True,
-    )
+    """POST /api/v1/orders.
+
+    409 `request-in-progress`(동일 clientOrderId 처리 중)는 새 clientOrderId로 1회 재시도한다
+    (docs/TOSS_API.md "에러 코드 전체 목록").
+    """
+    try:
+        return await client.request(
+            "POST",
+            "/api/v1/orders",
+            "ORDER",
+            json=_order_payload(order),
+            account_required=True,
+        )
+    except TossApiError as e:
+        if e.code != "request-in-progress":
+            raise
+        retried_order = replace(order, client_order_id=generate_client_order_id(order.market))
+        return await client.request(
+            "POST",
+            "/api/v1/orders",
+            "ORDER",
+            json=_order_payload(retried_order),
+            account_required=True,
+        )
 
 
 async def modify(order_id: str, **changes: Any) -> dict:
