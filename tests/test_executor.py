@@ -140,6 +140,51 @@ async def test_simulation_buy_fills_at_current_price_and_updates_portfolio(
 
 
 @pytest.mark.asyncio
+async def test_dry_run_execution_never_touches_portfolio_or_db(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """docs/SAFETY.md "DRY_RUN: DB 기록 최소화(영구 보존 데이터 생성 안 함)" — SIMULATION 리허설의
+    simulation_positions/simulation_trades를 DRY_RUN 테스트 실행이 오염시키면 안 된다."""
+    inserted: list[tuple[str, dict]] = []
+    published: list[tuple[str, dict]] = []
+
+    def _portfolio_should_not_be_loaded():
+        raise AssertionError("DRY_RUN은 가상 포트폴리오를 로드/갱신하면 안 된다")
+
+    async def _approve(order, mode):  # noqa: ANN001
+        return GateResult.approve()
+
+    async def _get_price(symbol):  # noqa: ANN001
+        return {"price": 75_000}
+
+    async def _get_commissions(market):  # noqa: ANN001
+        return {"rate": 0.001}
+
+    async def _insert(table, values):  # noqa: ANN001
+        inserted.append((table, values))
+        return values
+
+    async def _publish(event_type, *, mode, market, payload, correlation_id=None):  # noqa: ANN001
+        published.append((event_type, payload))
+
+    monkeypatch.setattr(executor.safety_gate, "check", _approve)
+    monkeypatch.setattr(executor.toss_market, "get_price", _get_price)
+    monkeypatch.setattr(executor.toss_account, "get_commissions", _get_commissions)
+    monkeypatch.setattr(executor.db, "insert", _insert)
+    monkeypatch.setattr(executor, "publish_event", _publish)
+    monkeypatch.setattr(executor, "_get_simulation_portfolio", _portfolio_should_not_be_loaded)
+
+    decision = _make_decision(action="BUY")
+    result = await executor.execute(decision, RunMode(mode="DRY_RUN", market="KR"))
+
+    assert result.filled is True
+    assert result.order_id is not None and result.order_id.startswith("DRY-")
+    assert inserted == []
+    assert published[0][0] == "trade_executed"
+    assert published[0][1]["pnlKrw"] is None
+
+
+@pytest.mark.asyncio
 async def test_live_execution_places_order_via_toss_and_records_trade(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -174,7 +219,13 @@ async def test_live_execution_places_order_via_toss_and_records_trade(
     assert result.filled is True
     assert result.order_id == "TOSS-1"
     assert result.fill_price == 74_800
-    assert inserted[0] == (
+    assert inserted[0][0] == "orders"
+    assert inserted[0][1]["symbol"] == "005930"
+    assert inserted[0][1]["action"] == "BUY"
+    assert inserted[0][1]["quantity"] == 2
+    assert inserted[0][1]["price"] == 74_800
+    assert inserted[0][1]["status"] == "FILLED"
+    assert inserted[1] == (
         "trades",
         {
             "symbol": "005930",

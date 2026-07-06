@@ -54,6 +54,9 @@ export interface OrderRecord {
   orderId: string;
   symbol: string;
   market: "KR" | "US";
+  action: "BUY" | "SELL";
+  quantity: number;
+  price: number | null;
   status: string;
   createdAt: string;
 }
@@ -87,7 +90,9 @@ export function resumeTrading(): Promise<{ success: boolean }> {
   return request("POST", "/api/v1/control/resume", {});
 }
 
-export function setSimulate(state: "on" | "off"): Promise<{ success: boolean; simulation: boolean }> {
+export function setSimulate(
+  state: "on" | "off",
+): Promise<{ success: boolean; simulation: boolean; reason?: string }> {
   return request("POST", "/api/v1/control/simulate", { state });
 }
 
@@ -104,6 +109,7 @@ export interface SimStatus {
   sharpeRatio: number;
   tradeCount: number;
   winRate: number;
+  avgHoldingDays: number;
   rejectionCount: number;
   apiCostKrw: number;
   apiCallCount: number;
@@ -160,4 +166,37 @@ export function getHealth(): Promise<{
 
 export function getVersion(): Promise<{ strategyVersion: string; promptVersion: string; deployedAt: string | null }> {
   return request("GET", "/api/v1/version");
+}
+
+export interface VersionCandidate {
+  id: number;
+  market: "KR" | "US";
+  strategyVersion: string;
+  promptVersion: string;
+  basedOn: string | null;
+  changeSummary: string | null;
+  backtestResult: { winRate: number; avgReturn: number; mdd: number; sharpeRatio: number; profitFactor: number } | null;
+  proposedAt: string;
+}
+
+export function getVersionCandidates(): Promise<{ candidates: VersionCandidate[] }> {
+  return request("GET", "/api/v1/version/candidates");
+}
+
+export function approveVersionCandidate(
+  id: number,
+  approvedBy: string,
+): Promise<{ success: boolean; reason?: string }> {
+  return request("POST", `/api/v1/version/${id}/approve`, { approvedBy });
+}
+
+export function rejectVersionCandidate(id: number): Promise<{ success: boolean; reason?: string }> {
+  return request("POST", `/api/v1/version/${id}/reject`, {});
+}
+
+export function rollbackVersion(
+  strategyVersion: string,
+  approvedBy: string,
+): Promise<{ success: boolean; reason?: string }> {
+  return request("POST", "/api/v1/version/rollback", { strategyVersion, approvedBy });
 }

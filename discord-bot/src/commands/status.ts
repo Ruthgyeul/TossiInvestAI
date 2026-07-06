@@ -56,7 +56,11 @@ async function ordersExecute(interaction: ChatInputCommandInteraction): Promise<
       await interaction.reply({ embeds: [buildInfoEmbed("[빈] 미체결 주문", "주문 내역이 없습니다.")] });
       return;
     }
-    const lines = orders.map((o) => `${o.orderId} — ${o.symbol}(${o.market}) ${o.status}`);
+    const lines = orders.map(
+      (o) =>
+        `${o.orderId} — ${o.symbol}(${o.market}) ${o.action} ${o.quantity}주` +
+        `${o.price !== null ? ` @ ${o.price.toLocaleString()}원` : " (시장가)"} ${o.status}`,
+    );
     await interaction.reply({ embeds: [buildInfoEmbed("[빈] 미체결 주문", lines.join("\n"))] });
   } catch (err) {
     const embed = buildErrorEmbed("[빈] ⚠️ 주문 조회 실패", (err as Error).message);

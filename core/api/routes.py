@@ -2,8 +2,8 @@
 
 import asyncio
 import json
-import statistics
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 import structlog
@@ -14,11 +14,17 @@ from core.db import store as db
 from core.db.redis import get_redis
 from core.events.publisher import publish_event
 from core.fund.manager import fund_manager
+from core.market_data import indicators
 from core.market_data import watchlist as watchlist_store
 from core.models import Decision, Market, Mode, RunMode
 from core.monitoring.health import HEALTH_REDIS_KEY
 from core.report.generator import generate_and_publish
 from core.simulation.portfolio import SimulationPortfolio
+from core.strategy.backtest import BacktestEngine
+from core.strategy.kr.mean_reversion import MeanReversionStrategy
+from core.strategy.kr.momentum import MomentumStrategy as KRMomentumStrategy
+from core.strategy.us.momentum import MomentumStrategy as USMomentumStrategy
+from core.strategy.us.overnight import OvernightStrategy
 from core.toss import market as toss_market
 from core.toss import order as toss_order
 from core.trading.executor import execute
@@ -56,13 +62,16 @@ async def get_holdings(request: web.Request) -> web.Response:
 
 
 async def get_orders(request: web.Request) -> web.Response:
-    """GET /api/v1/orders -> {orders: Order[]}"""
+    """GET /api/v1/orders -> {orders: Order[]} (docs/INTERNAL_API.md)."""
     rows = await db.fetch_all("orders", order_by="created_at", descending=True, limit=50)
     orders = [
         {
             "orderId": row["client_order_id"],
             "symbol": row["symbol"],
             "market": row["market"],
+            "action": row["action"],
+            "quantity": row["quantity"],
+            "price": float(row["price"]) if row["price"] is not None else None,
             "status": row["status"],
             "createdAt": row["created_at"].isoformat(),
         }
@@ -172,6 +181,8 @@ async def _cancel_open_orders(market: str | None) -> list[dict]:
         if o.get("market") not in markets:
             continue
         order_id = o.get("orderId")
+        if order_id is None:
+            continue
         try:
             await toss_order.cancel(order_id)
             cancelled.append({"orderId": order_id, "symbol": o.get("symbol")})
@@ -226,11 +237,45 @@ async def post_resume(request: web.Request) -> web.Response:
     return _json({"success": True})
 
 
+_MIN_SIMULATION_DAYS = 14
+
+
 async def post_simulate(request: web.Request) -> web.Response:
-    """POST /api/v1/control/simulate {state: on|off} -> {success, simulation}"""
+    """POST /api/v1/control/simulate {state: on|off} -> {success, simulation, reason?}
+
+    off(=LIVE 전환)는 docs/SAFETY.md·CLAUDE.md 절대 규칙 11 "실전 전환 전 SIMULATION 모드
+    최소 2주 이상 필수"를 만족해야 한다 — 미달 시 거부하고 SIMULATION 상태를 유지한다.
+    """
     body = await request.json()
-    settings.SIMULATION = body["state"] == "on"
-    return _json({"success": True, "simulation": settings.SIMULATION})
+    turn_on = body["state"] == "on"
+
+    if turn_on:
+        if not settings.SIMULATION:
+            await db.set_simulation_started_at(datetime.now(timezone.utc))
+        settings.SIMULATION = True
+        return _json({"success": True, "simulation": True})
+
+    if settings.SIMULATION:
+        started_at = await db.get_simulation_started_at()
+        elapsed_days = (
+            (datetime.now(timezone.utc) - started_at).total_seconds() / 86400
+            if started_at is not None
+            else 0.0
+        )
+        if elapsed_days < _MIN_SIMULATION_DAYS:
+            return _json(
+                {
+                    "success": False,
+                    "simulation": True,
+                    "reason": (
+                        f"SIMULATION 최소 {_MIN_SIMULATION_DAYS}일 필요 "
+                        f"(현재 {elapsed_days:.1f}일 경과)"
+                    ),
+                }
+            )
+
+    settings.SIMULATION = False
+    return _json({"success": True, "simulation": False})
 
 
 async def post_dryrun(request: web.Request) -> web.Response:
@@ -240,32 +285,35 @@ async def post_dryrun(request: web.Request) -> web.Response:
     return _json({"success": True, "dryRun": settings.DRY_RUN})
 
 
-def _max_drawdown_pct(values: list[float]) -> float:
-    if not values:
-        return 0.0
-    peak = values[0]
-    max_dd = 0.0
-    for value in values:
-        peak = max(peak, value)
-        if peak > 0:
-            max_dd = min(max_dd, (value - peak) / peak)
-    return max_dd
+def _average_holding_days(trades: list[dict]) -> float:
+    """docs/FUND_MANAGER.md `/simstatus` 예시 "평균 보유 2.3일" — 종목별 FIFO로 매수·매도를
+    매칭해 보유일수를 수량 가중 평균한다."""
+    by_symbol: dict[str, list[dict]] = {}
+    for trade in sorted(trades, key=lambda t: t["created_at"]):
+        by_symbol.setdefault(trade["symbol"], []).append(trade)
 
+    total_weighted_days = 0.0
+    total_matched_qty = 0
+    for symbol_trades in by_symbol.values():
+        open_lots: list[dict] = []  # [{"qty": int, "created_at": datetime}]
+        for trade in symbol_trades:
+            if trade["action"] == "BUY":
+                open_lots.append({"qty": trade["quantity"], "created_at": trade["created_at"]})
+                continue
 
-def _sharpe_ratio(values: list[float]) -> float:
-    if len(values) < 2:
-        return 0.0
-    returns = [
-        (values[i] - values[i - 1]) / values[i - 1]
-        for i in range(1, len(values))
-        if values[i - 1] > 0
-    ]
-    if len(returns) < 2:
-        return 0.0
-    stdev = statistics.pstdev(returns)
-    if stdev == 0:
-        return 0.0
-    return statistics.mean(returns) / stdev * (252 ** 0.5)
+            remaining = trade["quantity"]
+            while remaining > 0 and open_lots:
+                lot = open_lots[0]
+                matched_qty = min(lot["qty"], remaining)
+                holding_days = (trade["created_at"] - lot["created_at"]).total_seconds() / 86400
+                total_weighted_days += holding_days * matched_qty
+                total_matched_qty += matched_qty
+                lot["qty"] -= matched_qty
+                remaining -= matched_qty
+                if lot["qty"] == 0:
+                    open_lots.pop(0)
+
+    return total_weighted_days / total_matched_qty if total_matched_qty else 0.0
 
 
 async def get_simstatus(request: web.Request) -> web.Response:
@@ -291,10 +339,11 @@ async def get_simstatus(request: web.Request) -> web.Response:
             "seedKrw": settings.INITIAL_SEED_KRW,
             "totalValueKrw": int(total_value),
             "cumulativeReturnPct": portfolio.get_return_rate(current_prices),
-            "mdd": _max_drawdown_pct(values),
-            "sharpeRatio": _sharpe_ratio(values),
+            "mdd": indicators.calculate_max_drawdown_pct(values),
+            "sharpeRatio": indicators.calculate_sharpe_ratio(values),
             "tradeCount": len(trades),
             "winRate": win_count / len(sells) if sells else 0.0,
+            "avgHoldingDays": _average_holding_days(trades),
             "rejectionCount": len(rejections),
             "apiCostKrw": api_usage["cost_krw"],
             "apiCallCount": api_usage["call_count"],
@@ -374,24 +423,67 @@ async def delete_watchlist(request: web.Request) -> web.Response:
     return _json({"success": True})
 
 
-async def post_backtest(request: web.Request) -> web.Response:
-    """POST /api/v1/backtest {strategy, period} -> 202 {jobId} (완료 시 backtest_complete 이벤트)
+_BACKTEST_STRATEGIES: dict[str, tuple[Any, Market]] = {
+    "kr_mean_reversion": (MeanReversionStrategy(), "KR"),
+    "kr_momentum": (KRMomentumStrategy(), "KR"),
+    "us_momentum": (USMomentumStrategy(), "US"),
+    "us_overnight": (OvernightStrategy(), "US"),
+}
 
-    strategy/backtest.py의 실제 엔진은 Phase 5에서 구현한다(tests/test_backtest.py 참고) —
-    지금은 접수만 하고 미구현 상태임을 backtest_complete 이벤트로 알린다.
+_BACKTEST_INITIAL_CAPITAL_KRW = 500_000
+
+
+async def post_backtest(request: web.Request) -> web.Response:
+    """POST /api/v1/backtest {strategy, period} -> 202 {jobId} (완료 시 backtest_complete 이벤트).
+
+    `strategy`는 `_BACKTEST_STRATEGIES`에 등록된 이름(kr_mean_reversion·kr_momentum·
+    us_momentum·us_overnight) 중 하나여야 한다.
     """
+    body = await request.json()
+    strategy_name = body["strategy"]
+    period = body["period"]
     job_id = str(uuid.uuid4())
 
-    async def _not_yet_available() -> None:
+    entry = _BACKTEST_STRATEGIES.get(strategy_name)
+
+    async def _run() -> None:
+        if entry is None:
+            await publish_event(
+                "backtest_complete",
+                mode=settings.run_mode,
+                market=None,
+                correlation_id=job_id,
+                payload={
+                    "error": (
+                        f"알 수 없는 전략: {strategy_name} "
+                        f"(사용 가능: {', '.join(_BACKTEST_STRATEGIES)})"
+                    )
+                },
+            )
+            return
+
+        strategy, market = entry
+        result = await BacktestEngine.run(
+            strategy=strategy,
+            market=market,
+            period=period,
+            initial_capital=_BACKTEST_INITIAL_CAPITAL_KRW,
+        )
         await publish_event(
             "backtest_complete",
             mode=settings.run_mode,
-            market=None,
+            market=market,
             correlation_id=job_id,
-            payload={"error": "백테스트 엔진은 아직 구현되지 않았습니다 (Phase 5 예정)"},
+            payload={
+                "winRate": result.win_rate,
+                "avgReturn": result.avg_return,
+                "mdd": result.mdd,
+                "sharpeRatio": result.sharpe_ratio,
+                "profitFactor": result.profit_factor,
+            },
         )
 
-    asyncio.create_task(_not_yet_available())
+    asyncio.create_task(_run())
     return _json({"jobId": job_id}, status=202)
 
 
@@ -423,14 +515,15 @@ async def get_health(request: web.Request) -> web.Response:
 
 
 async def get_version(request: web.Request) -> web.Response:
-    """GET /api/v1/version -> {strategyVersion, promptVersion, deployedAt}"""
-    rows = await db.fetch_all(
-        "strategy_versions", order_by="deployed_at", descending=True, limit=1
-    )
-    if not rows:
+    """GET /api/v1/version -> {strategyVersion, promptVersion, deployedAt}
+
+    docs/SELF_IMPROVEMENT.md "approved_by가 비어 있는 레코드는 미승인 상태로 간주한다" —
+    승인·배포된(approved_by가 채워진) 레코드만 "현재 버전"으로 취급한다.
+    """
+    row = await db.get_latest_deployed_strategy_version()
+    if row is None:
         return _json({"strategyVersion": "v1.0.0", "promptVersion": "system_kr_v1", "deployedAt": None})
 
-    row = rows[0]
     return _json(
         {
             "strategyVersion": row["strategy_version"],
@@ -438,6 +531,86 @@ async def get_version(request: web.Request) -> web.Response:
             "deployedAt": row["deployed_at"].isoformat(),
         }
     )
+
+
+def _candidate_json(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "market": row["market"],
+        "strategyVersion": row["strategy_version"],
+        "promptVersion": row["prompt_version"],
+        "basedOn": row["based_on"],
+        "changeSummary": row["change_summary"],
+        "backtestResult": row["backtest_result"],
+        "proposedAt": row["proposed_at"].isoformat(),
+    }
+
+
+async def get_version_candidates(request: web.Request) -> web.Response:
+    """GET /api/v1/version/candidates -> {candidates: VersionCandidate[]} — 승인 대기 후보 목록."""
+    rows = await db.get_pending_strategy_candidates()
+    return _json({"candidates": [_candidate_json(row) for row in rows]})
+
+
+async def post_version_approve(request: web.Request) -> web.Response:
+    """POST /api/v1/version/{id}/approve {approvedBy} -> {success, reason?}
+
+    후보를 승인·배포 상태로 전환한다(docs/SELF_IMPROVEMENT.md "개발자 승인").
+    """
+    version_id = int(request.match_info["id"])
+    body = await request.json()
+    approved_by = body["approvedBy"]
+
+    row = await db.approve_strategy_version(version_id, approved_by)
+    if row is None:
+        return _json({"success": False, "reason": "후보를 찾을 수 없습니다"})
+    return _json({"success": True})
+
+
+async def post_version_reject(request: web.Request) -> web.Response:
+    """POST /api/v1/version/{id}/reject -> {success, reason?} — 승인 대기 후보를 폐기한다."""
+    version_id = int(request.match_info["id"])
+
+    row = await db.fetch_one("strategy_versions", {"id": version_id})
+    if row is None:
+        return _json({"success": False, "reason": "후보를 찾을 수 없습니다"})
+    if row["approved_by"] is not None:
+        return _json({"success": False, "reason": "이미 승인·배포된 버전은 반려할 수 없습니다"})
+
+    await db.delete("strategy_versions", {"id": version_id})
+    return _json({"success": True})
+
+
+async def post_version_rollback(request: web.Request) -> web.Response:
+    """POST /api/v1/version/rollback {strategyVersion, approvedBy} -> {success, reason?}
+
+    과거에 승인·배포된 이력이 있는 버전으로 즉시 되돌린다(docs/SELF_IMPROVEMENT.md "버전 관리
+    및 롤백") — 기존 이력을 지우지 않고, 그 버전을 새 배포로 다시 기록해 감사 추적을 유지한다.
+    """
+    body = await request.json()
+    target_version = body["strategyVersion"]
+    approved_by = body["approvedBy"]
+
+    target = await db.get_deployed_strategy_version_by_name(target_version)
+    if target is None:
+        return _json({"success": False, "reason": f"배포 이력이 없는 버전입니다: {target_version}"})
+
+    current = await db.get_latest_deployed_strategy_version(target["market"])
+    await db.insert(
+        "strategy_versions",
+        {
+            "market": target["market"],
+            "strategy_version": target["strategy_version"],
+            "prompt_version": target["prompt_version"],
+            "based_on": current["strategy_version"] if current else None,
+            "change_summary": f"롤백: {target['strategy_version']}로 복귀",
+            "backtest_result": target["backtest_result"],
+            "approved_by": approved_by,
+            "proposed_at": datetime.now(timezone.utc),
+            "deployed_at": datetime.now(timezone.utc),
+        },
+    )
+    return _json({"success": True})
 
 
 def register_routes(app: web.Application) -> None:
@@ -463,5 +636,9 @@ def register_routes(app: web.Application) -> None:
             web.post("/api/v1/backtest", post_backtest),
             web.get("/api/v1/health", get_health),
             web.get("/api/v1/version", get_version),
+            web.get("/api/v1/version/candidates", get_version_candidates),
+            web.post("/api/v1/version/{id}/approve", post_version_approve),
+            web.post("/api/v1/version/{id}/reject", post_version_reject),
+            web.post("/api/v1/version/rollback", post_version_rollback),
         ]
     )

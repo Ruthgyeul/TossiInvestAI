@@ -94,14 +94,11 @@ systemctl status bin-core bin-discord
 journalctl -u bin-core -f
 ```
 
-> ✅ **Phase 4에서 해결**: `deploy/systemd/bin-core.service`의 `ExecStart`는 이제
-> `core/main.py`(스케줄러 + 내부 API 서버를 한 프로세스로 기동)를 가리키는
-> `python3 -m core.main`을 사용한다. `WorkingDirectory`도 저장소 루트로 수정했다 —
-> `core.main`은 `core/` 패키지를 임포트하므로 `core/` 안에서 실행하면 안 된다.
->
-> 또한 `deploy/systemd/`의 경로(`/home/ruthgyeul/TossInvestAI`, venv 사용)는
-> `docs/ARCHITECTURE.md` 예시(`/home/pi/trading-bot`, venv 미사용)와 다르다 —
-> **`deploy/systemd/`의 실제 파일을 최신 기준으로 삼는다.**
+> `deploy/systemd/bin-core.service`의 `ExecStart`는 `core/main.py`(스케줄러 + 내부 API
+> 서버를 한 프로세스로 기동)를 가리키는 `python3 -m core.main`을 사용하며,
+> `WorkingDirectory`는 저장소 루트다 — `core.main`은 `core/` 패키지를 임포트하므로
+> `core/` 안에서 실행하면 안 된다. `docs/ARCHITECTURE.md`도 이제 별도 예시 없이
+> `deploy/systemd/`의 실제 파일을 그대로 기준으로 삼는다.
 
 ---
 
@@ -131,9 +128,10 @@ sudo systemctl restart bin-core bin-discord
 잡으로 이미 등록한다 — **별도 systemd timer나 cron이 필요 없다.**
 
 > ⚠️ **TODO**: `bin-core`가 백업 예정 시각에 다운돼 있으면 캐치업 로직이 없어
-> 조용히 누락될 수 있다. `core/db/backup.py`의 `run_daily_backup()` 등이 현재
-> 빈 스텁이라 실패 알림도 아직 구현 전이다 — 운영자가 매일 아침 `backups/daily/`를
-> 눈으로 확인하는 걸 임시 대책으로 권장한다.
+> 조용히 누락될 수 있다. `core/db/backup.py`는 실행 자체가 실패하면 `health_alert`
+> 이벤트로 `#stock-error`에 알리지만, 프로세스가 아예 안 떠 있어 잡 자체가 실행되지
+> 않은 경우는 감지하지 못한다 — 운영자가 매일 아침 `backups/daily/`를 눈으로
+> 확인하는 걸 임시 대책으로 권장한다.
 
 월간 백업은 무제한 보관되므로, 256GB SSD에서 디스크 사용량을 주기적으로 확인한다
 (`core/monitoring/health.py`의 `DISK_THRESHOLD_PCT=90.0` 초과 시 `#stock-error` 알림).

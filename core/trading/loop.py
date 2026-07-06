@@ -64,6 +64,8 @@ async def _build_state_snapshot(market: Market) -> StateSnapshot:
             "today_realized_pnl_krw": portfolio_status["todayPnlKrw"],
             "api_cost_month_krw": await fund_manager.estimated_api_cost_krw(),
         },
+        toss_popular_top10=snapshot["toss_popular_top10"],
+        fear_greed_index=snapshot["fear_greed_index"],
         market_events_today=events_today,
     )
 
@@ -170,6 +172,17 @@ async def publish_status_update() -> None:
             "snapshot_at": datetime.now(timezone.utc),
         },
     )
+    # LIVE도 동일하게 적재해야 core/report/generator.py의 자산 추이·수익률 차트가
+    # LIVE 모드에서도 생성된다 (기존에는 SIMULATION 스냅샷만 있어 LIVE에서 항상 빠졌었다).
+    if live_status is not None:
+        await db.insert(
+            "live_portfolio_snapshots",
+            {
+                "total_value_krw": live_status["totalValueKrw"],
+                "cash_krw": live_status["cashKrw"],
+                "snapshot_at": datetime.now(timezone.utc),
+            },
+        )
 
     await publish_event(
         "status_update",

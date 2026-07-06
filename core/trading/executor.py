@@ -51,7 +51,7 @@ def _append_trade_log(
     *,
     order_id: str,
     commission_krw: int,
-    realized_pnl_krw: int | None,
+    realized_pnl_krw: float | None,
     balance_change_krw: float | None,
     strategy_version: str,
     prompt_version: str,
@@ -151,6 +151,21 @@ async def _execute_live(
     fill_price = float(response.get("fillPrice", order.price or 0))
     result = OrderResult(filled=True, order_id=response.get("orderId"), fill_price=fill_price)
 
+    # GET /api/v1/orders(docs/INTERNAL_API.md)가 조회하는 주문 이력 — Safety Gate를 통과해
+    # 실제로 접수된 주문만 기록한다 (거부된 주문은 _handle_rejection이 별도로 처리).
+    await db.insert(
+        "orders",
+        {
+            "client_order_id": order.client_order_id,
+            "symbol": order.symbol,
+            "market": order.market,
+            "action": order.action,
+            "quantity": order.quantity,
+            "price": order.price,
+            "status": "FILLED" if result.filled else "PENDING",
+        },
+    )
+
     commission = await _commission_krw(order.market, fill_price * order.quantity)
     await db.insert(
         "trades",
@@ -199,23 +214,33 @@ async def _execute_live(
 async def _execute_simulation(
     decision: Decision, order: Order, mode: RunMode, *, strategy_version: str, prompt_version: str
 ) -> OrderResult:
+    """SIMULATION은 가상 포트폴리오에 영구 반영한다. DRY_RUN은 개발용 최소 테스트이므로
+    docs/SAFETY.md "DB 기록 최소화 (영구 보존 데이터 생성 안 함)"에 따라 가상 포트폴리오·DB·
+    거래 로그 어디에도 흔적을 남기지 않고 체결가만 계산해 반환한다 — SIMULATION 리허설의
+    `simulation_positions` 상태를 DRY_RUN 테스트 실행이 오염시키지 않도록 한다.
+    """
     fill_price = order.price or (await toss_market.get_price(order.symbol))["price"]
     commission = await _commission_krw(order.market, fill_price * order.quantity)
-    portfolio = await _get_simulation_portfolio()
-    order_id = f"SIM-{datetime.now(_KST):%Y%m%d}-{order.market}-{toss_order.generate_client_order_id(order.market)[-6:]}"
+    prefix = "DRY" if mode.mode == "DRY_RUN" else "SIM"
+    order_id = f"{prefix}-{datetime.now(_KST):%Y%m%d}-{order.market}-{toss_order.generate_client_order_id(order.market)[-6:]}"
 
     notional = fill_price * order.quantity
-    if order.action == "BUY":
-        await portfolio.apply_buy(order.symbol, order.quantity, fill_price, commission, order.market)
+    if mode.mode == "DRY_RUN":
         pnl_krw = None
-        balance_change_krw = -(notional + commission)
+        balance_change_krw = -(notional + commission) if order.action == "BUY" else notional - commission
+        result = OrderResult(filled=True, order_id=order_id, fill_price=fill_price)
     else:
-        pnl_krw = await portfolio.apply_sell(order.symbol, order.quantity, fill_price, commission)
-        balance_change_krw = notional - commission
+        portfolio = await _get_simulation_portfolio()
+        if order.action == "BUY":
+            await portfolio.apply_buy(order.symbol, order.quantity, fill_price, commission, order.market)
+            pnl_krw = None
+            balance_change_krw = -(notional + commission)
+        else:
+            pnl_krw = await portfolio.apply_sell(order.symbol, order.quantity, fill_price, commission)
+            balance_change_krw = notional - commission
 
-    result = OrderResult(filled=True, order_id=order_id, fill_price=fill_price)
+        result = OrderResult(filled=True, order_id=order_id, fill_price=fill_price)
 
-    if mode.mode != "DRY_RUN":
         await db.insert(
             "simulation_trades",
             {

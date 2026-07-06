@@ -90,7 +90,9 @@ STEP 2. 시장 데이터 수집 (Redis 캐시 우선)
   ├── 거래량 변화율 (전일 대비)
   ├── 환율 조회 (US 루프만)
   ├── 보유 주식 현황 + 매수가능금액
-  ├── 토스 인기 종목 TOP10
+  ├── 관심 종목 내 거래량 급증 TOP10 (`toss_popular_top10` — 토스 API에 시장 전체
+  │     인기 종목 랭킹 엔드포인트가 없어, 관심 종목 범위의 거래량 급증 상위로 대체)
+  ├── 관심 종목 등락 비율 기반 공포/탐욕 대체 지표 (`fear_greed_index`, 0~100)
   └── 오늘 시장 이벤트 (FOMC·CPI·실적 발표 등)
 
 STEP 3. 규칙 기반 필터 (Claude 호출 없이 처리)
@@ -150,7 +152,7 @@ STEP 8. 결과 기록
     }
   },
 
-  "toss_popular_top10": [],
+  "toss_popular_top10": ["005930", "000660"],
   "fear_greed_index": 62,
   "market_events_today": [],
 
@@ -349,6 +351,20 @@ BacktestEngine.run(
 )
 # 결과: 승률, 평균 수익률, MDD, 샤프 지수, 수익 팩터
 ```
+
+관심 종목의 일봉 히스토리로 전략의 `generate_signal`을 매일 재현해 가상 체결을 누적한다.
+토스증권 API에 기간 지정 캔들 조회가 없어(docs/TOSS_API.md), 보유 중인 전체 일봉 히스토리
+중 최근 N거래일(1Y=252·3Y=756·5Y=1260)만 사용한다.
+
+Discord `/backtest {strategy} {period}`는 아래 등록된 이름만 받는다
+(`core/api/routes.py`의 `_BACKTEST_STRATEGIES`):
+
+| 이름 | 전략 | 시장 |
+|------|------|------|
+| `kr_mean_reversion` | `MeanReversionStrategy` | KR |
+| `kr_momentum` | `MomentumStrategy` | KR |
+| `us_momentum` | `MomentumStrategy` | US |
+| `us_overnight` | `OvernightStrategy` | US |
 
 ---
 

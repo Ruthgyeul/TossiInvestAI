@@ -71,6 +71,17 @@ async def get_stock_warnings(symbol: str) -> dict:
     return await client.request("GET", f"/api/v1/stocks/{symbol}/warnings", "STOCK")
 
 
+async def get_stock_info(symbol: str) -> dict:
+    """GET /api/v1/stocks — 종목 기본 정보 (docs/TOSS_API.md 전체 엔드포인트 표 "종목")."""
+    return await client.request("GET", "/api/v1/stocks", "STOCK", params={"symbol": symbol})
+
+
+async def get_recent_trades(symbol: str) -> list[dict]:
+    """GET /api/v1/trades — 최근 체결 내역 (docs/TOSS_API.md 전체 엔드포인트 표 "체결")."""
+    data = await client.request("GET", "/api/v1/trades", "MARKET_DATA", params={"symbol": symbol})
+    return data["trades"]  # type: ignore[no-any-return]
+
+
 async def _get_market_calendar(market: Market) -> dict[str, Any]:
     """GET /api/v1/market-calendar/{market} — Redis `market_open:{market}` 캐시를
     `is_market_open`·`is_regular_session`이 공유한다.

@@ -157,6 +157,13 @@ async def test_weekly_rebalance_splits_net_profit_80_20(
     monkeypatch.setattr(
         manager_module.db, "get_weekly_net_profit_krw", _weekly_net_profit_krw
     )
+    inserted: list[tuple[str, dict]] = []
+
+    async def _insert(table: str, values: dict) -> dict:
+        inserted.append((table, values))
+        return values
+
+    monkeypatch.setattr(manager_module.db, "insert", _insert)
 
     result = await fund_manager.weekly_rebalance()
 
@@ -164,6 +171,12 @@ async def test_weekly_rebalance_splits_net_profit_80_20(
     assert result.api_cost_covered_krw == 8_000
     assert result.reinvested_krw == 25_600
     assert result.buffer_added_krw == 6_400
+
+    # 계산 결과가 감사 가능한 이력으로 영구 기록되어야 한다 (docs/FUND_MANAGER.md).
+    assert inserted[0][0] == "fund_rebalances"
+    assert inserted[0][1]["reinvested_krw"] == 25_600
+    assert inserted[0][1]["buffer_added_krw"] == 6_400
+    assert inserted[0][1]["total_value_krw"] == 550_000
 
 
 @pytest.mark.asyncio
@@ -192,12 +205,36 @@ async def test_weekly_rebalance_moves_buffer_overflow_to_operating_funds(
         manager_module.db, "get_weekly_net_profit_krw", _weekly_net_profit_krw
     )
 
+    async def _insert(table: str, values: dict) -> dict:
+        return values
+
+    monkeypatch.setattr(manager_module.db, "insert", _insert)
+
     result = await fund_manager.weekly_rebalance()
 
     # remaining=100,000 → 재투자 80,000 / 버퍼 20,000 → 버퍼 합계 115,000 > 상한 100,000
     # 초과분 15,000은 운용 자금으로 이동
     assert result.buffer_added_krw == 5_000
     assert result.reinvested_krw == 95_000
+
+
+@pytest.mark.asyncio
+async def test_get_last_rebalance_returns_most_recent_record(
+    fund_manager: FundManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import core.fund.manager as manager_module
+
+    async def _fetch_all(table, filters=None, *, order_by=None, descending=False, limit=None):  # noqa: ANN001
+        assert table == "fund_rebalances"
+        assert filters == {"mode": "LIVE"}
+        assert order_by == "created_at" and descending is True and limit == 1
+        return [{"reinvested_krw": 25_600, "buffer_added_krw": 6_400}]
+
+    monkeypatch.setattr(manager_module.db, "fetch_all", _fetch_all)
+
+    last = await fund_manager.get_last_rebalance()
+
+    assert last == {"reinvested_krw": 25_600, "buffer_added_krw": 6_400}
 
 
 @pytest.mark.asyncio

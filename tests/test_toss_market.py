@@ -66,3 +66,27 @@ async def test_market_calendar_parsing(
 
     assert open_result is is_open
     assert regular_result is is_regular
+
+
+@pytest.mark.asyncio
+async def test_get_stock_info(fake_redis) -> None:
+    with aioresponses() as mocked:
+        mocked.get(
+            f"{_BASE_URL}/api/v1/stocks?symbol=005930",
+            payload={"symbol": "005930", "name": "삼성전자"},
+        )
+        data = await market.get_stock_info("005930")
+
+    assert data == {"symbol": "005930", "name": "삼성전자"}
+
+
+@pytest.mark.asyncio
+async def test_get_recent_trades(fake_redis) -> None:
+    with aioresponses() as mocked:
+        mocked.get(
+            f"{_BASE_URL}/api/v1/trades?symbol=005930",
+            payload={"trades": [{"price": 75_000, "quantity": 10}]},
+        )
+        trades = await market.get_recent_trades("005930")
+
+    assert trades == [{"price": 75_000, "quantity": 10}]

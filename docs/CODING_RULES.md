@@ -291,6 +291,9 @@ pandas>=2.0
 ta>=0.11                     # RSI·MACD·EMA·볼린저밴드
 matplotlib>=3.8              # 리포트 그래프
 
+# 헬스 모니터링
+psutil>=5.9
+
 # Discord 알림 (헬스 모니터링용)
 discord.py>=2.4
 
@@ -300,6 +303,8 @@ python-dotenv>=1.0
 # 테스트·품질
 pytest>=8.0
 pytest-asyncio>=0.23
+aioresponses>=0.7          # toss/client.py 등 aiohttp 호출 목업
+fakeredis>=2.20            # Redis 캐시·Rate Limit 로직 인메모리 테스트
 mypy>=1.8
 ruff>=0.4
 ```

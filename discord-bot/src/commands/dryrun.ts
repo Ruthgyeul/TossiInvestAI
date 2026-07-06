@@ -41,6 +41,14 @@ async function simulateExecute(interaction: ChatInputCommandInteraction): Promis
   const state = interaction.options.getString("state", true) as "on" | "off";
   try {
     const result = await setSimulate(state);
+    if (!result.success) {
+      const embed = buildErrorEmbed(
+        "[빈] ⚠️ SIMULATION → LIVE 전환 거부",
+        result.reason ?? "알 수 없는 사유",
+      );
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+      return;
+    }
     const embed = buildInfoEmbed(
       "[빈] SIMULATION 모드",
       `SIMULATION 모드: ${result.simulation ? "on" : "off"}`,
@@ -68,6 +76,7 @@ async function simstatusExecute(interaction: ChatInputCommandInteraction): Promi
       `샤프 지수         ${s.sharpeRatio.toFixed(2)}`,
       `총 거래           ${s.tradeCount}회`,
       `승률              ${(s.winRate * 100).toFixed(1)}%`,
+      `평균 보유         ${s.avgHoldingDays.toFixed(1)}일`,
       `Safety Gate 거부  ${s.rejectionCount}회`,
       `Claude API 비용   ${s.apiCostKrw.toLocaleString()} KRW (${s.apiCallCount}회)`,
     ];

@@ -1,8 +1,5 @@
 // /backtest {strategy} {period} — 백테스트 실행 (1Y/3Y/5Y) (docs/BIN.md)
 //
-// strategy/backtest.py 엔진은 Phase 5에서 구현된다(tests/test_backtest.py 참고) — 접수는 정상
-// 처리되지만 완료 이벤트(backtest_complete)는 아직 "미구현" 결과를 담아 온다.
-//
 // deferReply()로 응답을 미뤄두고, eventSubscriber.ts가 jobId(correlation_id)가 일치하는
 // backtest_complete 이벤트 수신 시 editReply()로 마무리한다 (docs/INTERNAL_API.md).
 import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
@@ -15,7 +12,14 @@ import type { BotCommand } from "./types.js";
 const data = new SlashCommandBuilder()
   .setName("backtest")
   .setDescription("백테스트 실행")
-  .addStringOption((opt) => opt.setName("strategy").setDescription("전략 이름").setRequired(true))
+  .addStringOption((opt) =>
+    opt.setName("strategy").setDescription("전략 이름").setRequired(true).addChoices(
+      { name: "kr_mean_reversion", value: "kr_mean_reversion" },
+      { name: "kr_momentum", value: "kr_momentum" },
+      { name: "us_momentum", value: "us_momentum" },
+      { name: "us_overnight", value: "us_overnight" },
+    ),
+  )
   .addStringOption((opt) =>
     opt.setName("period").setDescription("기간").setRequired(true).addChoices(
       { name: "1Y", value: "1Y" },
