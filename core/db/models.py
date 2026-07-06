@@ -6,7 +6,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, Numeric, String
+from sqlalchemy import JSON, CheckConstraint, DateTime, Numeric, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -79,8 +79,8 @@ class DecisionRecord(_ModeMixin, Base):
     strategy_version: Mapped[str] = mapped_column(String(20))
     prompt_version: Mapped[str] = mapped_column(String(30))
     model_used: Mapped[str] = mapped_column(String(50))
-    state_snapshot: Mapped[dict] = mapped_column(default=dict)
-    decision: Mapped[dict] = mapped_column(default=dict)
+    state_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    decision: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 

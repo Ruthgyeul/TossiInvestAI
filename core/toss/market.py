@@ -1,36 +1,91 @@
 """시세·캘린더·환율·종목 조회 (docs/TOSS_API.md)."""
 
+import json as json_lib
+from typing import Any
+
+from core.db.redis import get_redis
 from core.models import Market
+from core.toss import client
+
+_PRICE_TTL = 10
+_CANDLE_TTL = 60
+_MARKET_CALENDAR_TTL = 60
 
 
 async def get_price(symbol: str) -> dict:
     """GET /api/v1/prices — Redis `price:{symbol}` 10s 캐시 우선."""
-    raise NotImplementedError
+    redis = get_redis()
+    key = f"price:{symbol}"
+    cached = await redis.get(key)
+    if cached is not None:
+        return json_lib.loads(cached)  # type: ignore[no-any-return]
+
+    data = await client.request(
+        "GET", "/api/v1/prices", "MARKET_DATA", params={"symbol": symbol}
+    )
+    await redis.set(key, json_lib.dumps(data), ex=_PRICE_TTL)
+    return data
 
 
 async def get_candles(symbol: str, timeframe: str) -> list[dict]:
     """GET /api/v1/candles — Redis `candle:{symbol}:{tf}` 60s 캐시 우선."""
-    raise NotImplementedError
+    redis = get_redis()
+    key = f"candle:{symbol}:{timeframe}"
+    cached = await redis.get(key)
+    if cached is not None:
+        return json_lib.loads(cached)  # type: ignore[no-any-return]
+
+    data = await client.request(
+        "GET",
+        "/api/v1/candles",
+        "MARKET_DATA_CHART",
+        params={"symbol": symbol, "timeframe": timeframe},
+    )
+    candles: list[dict] = data["candles"]
+    await redis.set(key, json_lib.dumps(candles), ex=_CANDLE_TTL)
+    return candles
 
 
 async def get_orderbook(symbol: str) -> dict:
     """GET /api/v1/orderbook."""
-    raise NotImplementedError
+    return await client.request(
+        "GET", "/api/v1/orderbook", "MARKET_DATA", params={"symbol": symbol}
+    )
 
 
 async def get_price_limits(symbol: str) -> dict:
     """GET /api/v1/price-limits (KR 상·하한가)."""
-    raise NotImplementedError
+    return await client.request(
+        "GET", "/api/v1/price-limits", "MARKET_DATA", params={"symbol": symbol}
+    )
 
 
 async def get_exchange_rate() -> float:
     """GET /api/v1/exchange-rate (KRW/USD)."""
-    raise NotImplementedError
+    data = await client.request("GET", "/api/v1/exchange-rate", "MARKET_INFO")
+    return float(data["rate"])
 
 
 async def get_stock_warnings(symbol: str) -> dict:
     """GET /api/v1/stocks/{symbol}/warnings — VI·투자경고·정리매매 여부."""
-    raise NotImplementedError
+    return await client.request("GET", f"/api/v1/stocks/{symbol}/warnings", "STOCK")
+
+
+async def _get_market_calendar(market: Market) -> dict[str, Any]:
+    """GET /api/v1/market-calendar/{market} — Redis `market_open:{market}` 캐시를
+    `is_market_open`·`is_regular_session`이 공유한다.
+    """
+    redis = get_redis()
+    key = f"market_open:{market}"
+    cached = await redis.get(key)
+    if cached is not None:
+        return json_lib.loads(cached)  # type: ignore[no-any-return]
+
+    data = await client.request(
+        "GET", f"/api/v1/market-calendar/{market}", "MARKET_INFO"
+    )
+    await redis.set(key, json_lib.dumps(data), ex=_MARKET_CALENDAR_TTL)
+    return data
 
 
 async def is_market_open(market: Market) -> bool:
@@ -38,9 +93,11 @@ async def is_market_open(market: Market) -> bool:
 
     Redis `market_open:{market}` 60s 캐시 우선.
     """
-    raise NotImplementedError
+    data = await _get_market_calendar(market)
+    return bool(data["isOpen"])
 
 
 async def is_regular_session(market: Market) -> bool:
     """정규장 여부 — 금액 주문(AMOUNT) 허용 판단에 사용. Redis `market_open:{market}` 캐시 공유."""
-    raise NotImplementedError
+    data = await _get_market_calendar(market)
+    return bool(data.get("isRegularSession", False))
