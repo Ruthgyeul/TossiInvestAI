@@ -1,4 +1,4 @@
-# TossiInvestAI — 빈(Bin)
+# TossInvestAI — 빈(Bin)
 
 Raspberry Pi 5에서 24/7 실행되는 AI 자동 주식 트레이딩 봇.
 한국장(KRX)과 미국장(US)을 동시에 운용하며, 모든 상태와 결정을 Discord로 공유한다.
