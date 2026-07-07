@@ -1,4 +1,4 @@
-# TossiInvestAI — 빈(Bin)
+# TossInvestAI — 빈(Bin)
 
 Raspberry Pi 5에서 24/7 실행되는 AI 자동 주식 트레이딩 봇.
 한국장(KRX)과 미국장(US)을 동시에 운용하며, 모든 상태와 결정을 Discord로 공유한다.
@@ -7,26 +7,15 @@ Raspberry Pi 5에서 24/7 실행되는 AI 자동 주식 트레이딩 봇.
 
 ## 현재 상태
 
-`docs/CODING_RULES.md`의 개발 순서(Phase 1~5) 기준 **코드 구현은 Phase 1~5 전체 완료**.
+`docs/CODING_RULES.md` 개발 순서 기준 **Phase 1~5(1~17단계) 코드 구현 완료**.
 
 - Safety Gate(11개 조건)·FundManager(SIMULATION/LIVE 완전 분리, 주간 재배분 감사 기록)
 - AI Gateway(Claude 직접 호출 + Prompt Caching, Gemini 뉴스 요약, DeepSeek 폴백)
 - 트레이딩 루프(KR·US, 규칙 기반 필터 → Claude 판단), Discord 봇, 리포트(8종 차트 전부 연결)
-- 자기평가(Reflection) + 자기개선 파이프라인(개선 후보 제안 → 백테스트 게이트 →
-  Discord 승인/반려/롤백, `docs/SELF_IMPROVEMENT.md`)
-- 백테스트 엔진(`core/strategy/backtest.py`), 모의투자 신호 검증(`paper_trading.py`)
-- US 오버나이트 갭 대응 전략, 무료 RSS 뉴스 소스, 자동 백업/복구, 헬스 모니터링
+- 자기평가(Reflection) + 자기개선 파이프라인(개선 후보 제안 → 백테스트 게이트 → Discord 승인/반려/롤백)
+- 백테스트 엔진, 모의투자 신호 검증, US 오버나이트 갭 대응 전략, 무료 RSS 뉴스 소스, 자동 백업/복구, 헬스 모니터링
 
-**남은 것은 코드가 아니라 운영 절차**다 — `docs/SAFETY.md`의 SIMULATION 체크리스트를
-통과하고 `SIMULATION=true`로 **최소 2주 이상 실제 리허설**을 거친 뒤에만
-`SIMULATION=false`(실전)로 전환한다. 2주 미만이면 `/simulate off` 자체가 코드 레벨에서
-거부된다(`core/api/routes.py:post_simulate`). 이후 소액 실거래 1주 + 7일 모니터링까지
-문제가 없어야 정식 운용으로 넘어간다(`docs/CODING_RULES.md` Phase 5, 18~20단계).
-
-자기개선 파이프라인은 개선 후보 제안·백테스트 검증·승인/반려/롤백까지 자동화되어
-있지만, 실제 `core/trading/prompts/*.md` 프롬프트 문구 수정이나 전략 파라미터 코드
-변경은 승인 이후 개발자가 직접 반영한다(에이전트가 코드를 자율 수정하는 루프는
-CLAUDE.md 절대 규칙 10에 따라 만들지 않는다).
+남은 18~20단계는 코드가 아닌 운영 절차다 — [개발 순서](#개발-순서) 참고.
 
 ---
 
@@ -134,10 +123,9 @@ cd discord-bot && npm run typecheck && npm run build
 ```
 
 ### 개발 순서
-`docs/CODING_RULES.md`의 Phase 1~5(1~17단계)는 코드 구현이 모두 끝났다. 남은 18~20단계는
-코드가 아닌 운영 절차다 — 항상 `DRY_RUN=true`로 개발·디버깅을 마친 뒤, `SIMULATION=true`로
-최소 2주 이상 실제 리허설(`docs/SAFETY.md` 체크리스트 통과)을 거치고, 이후 소액 실거래
-1주 + 7일 모니터링까지 문제없어야 정식 운용으로 전환한다.
+`docs/CODING_RULES.md`의 Phase 1~5(1~17단계)는 완료됐다. 남은 18~20단계는 운영 절차다 —
+`SIMULATION=true`로 최소 2주 이상 실제 리허설(`docs/SAFETY.md` 체크리스트 통과)을 거친
+뒤, 소액 실거래 1주 + 7일 모니터링까지 문제없어야 정식 운용으로 전환한다.
 
 ---
 
