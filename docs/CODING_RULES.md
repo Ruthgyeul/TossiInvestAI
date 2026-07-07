@@ -270,42 +270,42 @@ try {
 
 ```
 # AI Gateway
-anthropic>=0.30
-google-generativeai>=0.8     # Gemini
-openai>=1.0                  # DeepSeek (OpenAI 호환)
+anthropic>=0.116
+google-genai>=1.75           # Gemini (google-generativeai는 EOL — google-genai로 대체)
+openai>=2.44                 # DeepSeek (OpenAI 호환)
 
 # 설정·비동기·DB
-pydantic-settings>=2.0
+pydantic-settings>=2.14
 aiohttp>=3.9,<3.10           # aioresponses 목업이 3.10+과 호환되지 않음 (requirements.txt)
-asyncpg>=0.29
-redis[asyncio]>=5.0
-SQLAlchemy[asyncio]>=2.0
+asyncpg>=0.31
+redis>=8.0                   # asyncio 지원이 기본 내장되어 [asyncio] extra 불필요
+SQLAlchemy[asyncio]>=2.0.51
 
 # 스케줄러·로깅
-APScheduler>=3.10
-structlog>=24.0
+APScheduler>=3.11
+structlog>=26.1
 
 # 시장 데이터·분석
-pandas>=2.0
+pandas>=3.0
 ta>=0.11                     # RSI·MACD·EMA·볼린저밴드
-matplotlib>=3.8              # 리포트 그래프
+matplotlib>=3.11             # 리포트 그래프
 
 # 헬스 모니터링
-psutil>=5.9
+psutil>=7.2
 
 # Discord 알림 (헬스 모니터링용)
-discord.py>=2.4
+discord.py>=2.7
 
 # 환경변수
-python-dotenv>=1.0
+python-dotenv>=1.2
 
 # 테스트·품질
-pytest>=8.0
-pytest-asyncio>=0.23
-aioresponses>=0.7          # toss/client.py 등 aiohttp 호출 목업
-fakeredis>=2.20            # Redis 캐시·Rate Limit 로직 인메모리 테스트
-mypy>=1.8
-ruff>=0.4
+pytest>=9.1
+pytest-asyncio>=1.4
+aioresponses>=0.7.9        # toss/client.py 등 aiohttp 호출 목업
+fakeredis>=2.36            # Redis 캐시·Rate Limit 로직 인메모리 테스트
+mypy>=2.1
+ruff>=0.15
 ```
 
 ### Node.js (package.json)
@@ -313,18 +313,25 @@ ruff>=0.4
 ```json
 {
   "dependencies": {
-    "discord.js": "^14.0.0",
-    "dotenv": "^16.0.0",
-    "ioredis": "^5.0.0"
+    "discord.js": "^14.26.4",
+    "dotenv": "^17.4.2",
+    "ioredis": "^5.11.1"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
-    "@types/node": "^20.0.0",
-    "ts-node": "^10.0.0",
-    "tsup": "^8.0.0"
+    "typescript": "^6.0.3",
+    "@types/node": "^24.13.2",
+    "ts-node": "^10.9.2",
+    "tsup": "^8.5.1"
+  },
+  "overrides": {
+    "undici": "^6.27.0"
   }
 }
 ```
+
+> `overrides.undici`: discord.js가 의존하는 `@discordjs/rest`가 `undici`를 정확히 `6.24.1`로
+> 고정하는데, 해당 버전에 알려진 취약점(GHSA-p88m-4jfj-68fv 등)이 있다. 같은 6.x 계열의
+> 패치 버전(`6.27.0+`)으로 강제 override해 해결한다.
 
 ---
 

@@ -12,14 +12,17 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "discord.js": "^14.0.0",
-    "dotenv": "^16.0.0",
-    "ioredis": "^5.0.0"
+    "discord.js": "^14.26.4",
+    "dotenv": "^17.4.2",
+    "ioredis": "^5.11.1"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
-    "@types/node": "^20.0.0",
-    "ts-node": "^10.0.0",
-    "tsup": "^8.0.0"
+    "typescript": "^6.0.3",
+    "@types/node": "^24.13.2",
+    "ts-node": "^10.9.2",
+    "tsup": "^8.5.1"
+  },
+  "overrides": {
+    "undici": "^6.27.0"
   }
 }

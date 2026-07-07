@@ -1,12 +1,12 @@
 """Gemini Free Tier — 2순위 AI Gateway. 뉴스 요약·보조 분석 전용 (docs/BIN.md)."""
 
-import google.generativeai as genai
+from google import genai
 
 from core.config import settings
 from core.gateway.base import AIGateway
 from core.models import Decision, StateSnapshot
 
-genai.configure(api_key=settings.GEMINI_API_KEY)
+_client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 _SUMMARY_PROMPT = (
     "너는 빈(Bin)의 뉴스 요약 보조 AI다. 아래 기사들을 투자 판단에 참고할 수 있도록 "
@@ -23,11 +23,16 @@ class GeminiGateway(AIGateway):
         if not articles:
             return ""
 
-        model = genai.GenerativeModel(settings.GEMINI_MODEL)
         articles_block = "\n\n".join(f"- {article}" for article in articles)
-        response = await model.generate_content_async(
-            f"{_SUMMARY_PROMPT}\n\n{articles_block}"
+        response = await _client.aio.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=f"{_SUMMARY_PROMPT}\n\n{articles_block}",
         )
+        if response.text is None:
+            raise ValueError(
+                f"Gemini 응답에 text가 없음 (model={settings.GEMINI_MODEL}, "
+                f"response_type={type(response).__name__})"
+            )
         return response.text.strip()
 
 

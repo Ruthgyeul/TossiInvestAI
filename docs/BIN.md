@@ -32,7 +32,7 @@
 | 순위 | 모델 | SDK / 방식 | 역할 |
 |------|------|-----------|------|
 | 1 | **Claude API** | `anthropic` Python SDK | 매수/매도 최종 결정 |
-| 2 | **Gemini Free** | `google-generativeai` SDK | 뉴스 요약·보조 분석 |
+| 2 | **Gemini Free** | `google-genai` SDK | 뉴스 요약·보조 분석 |
 | 3 | **DeepSeek Free** | OpenAI 호환 REST API | Claude 장애 시 폴백 |
 
 ```python
