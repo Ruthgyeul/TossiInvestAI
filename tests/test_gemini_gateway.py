@@ -39,6 +39,21 @@ async def test_summarize_news_returns_stripped_gemini_text(
 
 
 @pytest.mark.asyncio
+async def test_summarize_news_raises_value_error_when_response_text_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_generate_content_no_text(model: str, contents: str) -> _FakeResponse:
+        return _FakeResponse(None)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        gemini_module._client.aio.models, "generate_content", _fake_generate_content_no_text
+    )
+
+    with pytest.raises(ValueError, match="Gemini 응답에 text가 없음"):
+        await gemini_gateway.summarize_news(["삼성전자, 3분기 영업이익 컨센서스 상회"])
+
+
+@pytest.mark.asyncio
 async def test_summarize_news_returns_empty_string_for_no_articles() -> None:
     result = await gemini_gateway.summarize_news([])
 

@@ -29,7 +29,10 @@ class GeminiGateway(AIGateway):
             contents=f"{_SUMMARY_PROMPT}\n\n{articles_block}",
         )
         if response.text is None:
-            raise ValueError("Gemini 응답에 text가 없음")
+            raise ValueError(
+                f"Gemini 응답에 text가 없음 (model={settings.GEMINI_MODEL}, "
+                f"response_type={type(response).__name__})"
+            )
         return response.text.strip()
 
 
