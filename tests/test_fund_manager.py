@@ -118,8 +118,8 @@ async def test_record_api_usage_applies_cache_pricing(
         cache_write_tokens=300,
     )
 
-    p_in = settings.claude_input_price_per_mtok / 1_000_000
-    p_out = settings.claude_output_price_per_mtok / 1_000_000
+    p_in = settings.CLAUDE_INPUT_PRICE_PER_MTOK / 1_000_000
+    p_out = settings.CLAUDE_OUTPUT_PRICE_PER_MTOK / 1_000_000
     expected_cost_usd = (
         1000 * p_in + 300 * p_in * 1.25 + 500 * p_in * 0.10 + 200 * p_out
     )

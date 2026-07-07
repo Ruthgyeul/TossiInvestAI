@@ -1,6 +1,5 @@
 """모든 설정의 단일 진입점. core 어디서든 `from core.config import settings`로 불러온다."""
 
-from datetime import date
 from typing import Literal
 
 from pydantic import Field
@@ -23,6 +22,11 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str
     DEEPSEEK_MODEL: str = "deepseek-chat"
     DEEPSEEK_MAX_TOKENS: int = 512
+
+    # Claude 단가 (KRW 환산은 core/fund/manager.py) — 요금제가 바뀌면 코드 수정 없이
+    # .env만 바꿔 반영한다. 기본값은 standard 요금제 기준.
+    CLAUDE_INPUT_PRICE_PER_MTOK: float = 3.0
+    CLAUDE_OUTPUT_PRICE_PER_MTOK: float = 15.0
 
     # DB
     DATABASE_URL: str
@@ -57,15 +61,6 @@ class Settings(BaseSettings):
         if self.SIMULATION:
             return "SIMULATION"
         return "LIVE"
-
-    # 가격 자동 전환 (introductory → standard 2026-08-31 이후)
-    @property
-    def claude_input_price_per_mtok(self) -> float:
-        return 2.0 if date.today().isoformat() <= "2026-08-31" else 3.0
-
-    @property
-    def claude_output_price_per_mtok(self) -> float:
-        return 10.0 if date.today().isoformat() <= "2026-08-31" else 15.0
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

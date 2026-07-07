@@ -166,8 +166,8 @@ class FundManager:
         cache_write_tokens: int = 0,
     ) -> None:
         """Claude API 호출마다 토큰 수·비용을 api_usage 테이블에 기록한다."""
-        p_in = settings.claude_input_price_per_mtok / 1_000_000
-        p_out = settings.claude_output_price_per_mtok / 1_000_000
+        p_in = settings.CLAUDE_INPUT_PRICE_PER_MTOK / 1_000_000
+        p_out = settings.CLAUDE_OUTPUT_PRICE_PER_MTOK / 1_000_000
 
         cost_usd = (
             input_tokens * p_in

@@ -241,13 +241,16 @@ async def call_claude(
     return _parse_decision(response.content[0].text)
 ```
 
-### 비용 효과 (Sonnet 4.6, $2/M — introductory 2026-08-31까지)
+### 비용 효과 (Sonnet 4.6, standard 요금제 — $3/M input · $15/M output)
+
+개인 API 계정은 introductory 할인 대상이 아니므로 standard 단가를 기본값으로 쓴다
+(`CLAUDE_INPUT_PRICE_PER_MTOK`/`CLAUDE_OUTPUT_PRICE_PER_MTOK`, docs/CODING_RULES.md).
 
 | | 호출당 | 월 1,040회 |
 |-|--------|-----------|
-| 캐시 미적용 | ₩13 | ₩13,520 |
-| **캐시 적용** | **₩8** | **₩8,320** |
-| 절감 | ₩5 (38%) | **₩5,200** |
+| 캐시 미적용 | ₩20 | ₩20,800 |
+| **캐시 적용** | **₩12** | **₩12,480** |
+| 절감 | ₩8 (38%) | **₩8,320** |
 
 ---
 

@@ -1,7 +1,5 @@
 """core/config.py Settings 클래스 단위 테스트 (docs/CODING_RULES.md Phase 1-2)."""
 
-from datetime import date
-
 import pytest
 from pydantic import ValidationError
 
@@ -36,14 +34,16 @@ def test_run_mode_live_when_dry_run_and_simulation_disabled() -> None:
     assert _settings(DRY_RUN=False, SIMULATION=False).run_mode == "LIVE"
 
 
-def test_claude_pricing_switches_at_cutover_date() -> None:
+def test_claude_pricing_defaults_to_standard_rate() -> None:
     settings = _settings()
-    if date.today().isoformat() <= "2026-08-31":
-        assert settings.claude_input_price_per_mtok == 2.0
-        assert settings.claude_output_price_per_mtok == 10.0
-    else:
-        assert settings.claude_input_price_per_mtok == 3.0
-        assert settings.claude_output_price_per_mtok == 15.0
+    assert settings.CLAUDE_INPUT_PRICE_PER_MTOK == 3.0
+    assert settings.CLAUDE_OUTPUT_PRICE_PER_MTOK == 15.0
+
+
+def test_claude_pricing_overridable_via_env() -> None:
+    settings = _settings(CLAUDE_INPUT_PRICE_PER_MTOK=2.0, CLAUDE_OUTPUT_PRICE_PER_MTOK=10.0)
+    assert settings.CLAUDE_INPUT_PRICE_PER_MTOK == 2.0
+    assert settings.CLAUDE_OUTPUT_PRICE_PER_MTOK == 10.0
 
 
 def test_defaults_start_in_dry_run_and_simulation() -> None:

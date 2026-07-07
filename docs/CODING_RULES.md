@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str
     CLAUDE_MODEL: str = "claude-sonnet-4-6"
     CLAUDE_MAX_TOKENS: int = 512
+    CLAUDE_INPUT_PRICE_PER_MTOK: float = 3.0   # 요금제 변경 시 .env만 수정
+    CLAUDE_OUTPUT_PRICE_PER_MTOK: float = 15.0
     GEMINI_API_KEY: str
     DEEPSEEK_API_KEY: str
 
@@ -111,15 +113,6 @@ class Settings(BaseSettings):
         if self.SIMULATION:
             return "SIMULATION"
         return "LIVE"
-
-    # 가격 자동 전환 (introductory → standard 2026-08-31 이후)
-    @property
-    def claude_input_price_per_mtok(self) -> float:
-        return 2.0 if date.today().isoformat() <= "2026-08-31" else 3.0
-
-    @property
-    def claude_output_price_per_mtok(self) -> float:
-        return 10.0 if date.today().isoformat() <= "2026-08-31" else 15.0
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -206,8 +199,8 @@ def _record_usage(usage: anthropic.types.Usage) -> None:
 # core/fund/manager.py
 def record_api_usage(self, model, input_tokens, output_tokens,
                      cache_read_tokens=0, cache_write_tokens=0) -> None:
-    p_in  = settings.claude_input_price_per_mtok / 1_000_000
-    p_out = settings.claude_output_price_per_mtok / 1_000_000
+    p_in  = settings.CLAUDE_INPUT_PRICE_PER_MTOK / 1_000_000
+    p_out = settings.CLAUDE_OUTPUT_PRICE_PER_MTOK / 1_000_000
     KRW   = 1382.0  # 실시간 환율로 교체 가능
 
     cost_usd = (
