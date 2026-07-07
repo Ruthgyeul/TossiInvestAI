@@ -1,6 +1,6 @@
 // /version {candidates|approve|reject|rollback} — 전략·프롬프트 버전 조회·승인·반려·롤백
 // (docs/SELF_IMPROVEMENT.md 자기개선 파이프라인 — 배포는 항상 개발자 승인이 필요하다).
-import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
+import { ChatInputCommandInteraction, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 
 import { buildErrorEmbed, buildInfoEmbed } from "../embeds/info.js";
 import {
@@ -15,6 +15,9 @@ import type { BotCommand } from "./types.js";
 const data = new SlashCommandBuilder()
   .setName("version")
   .setDescription("전략·프롬프트 버전 관리")
+  // approve/reject/rollback은 배포 상태를 바꾼다 (docs/SELF_IMPROVEMENT.md "개발자 승인 필요") —
+  // 서브커맨드 단위로는 권한을 나눌 수 없어 명령 전체를 관리자로 제한한다.
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addSubcommand((sub) => sub.setName("candidates").setDescription("승인 대기 중인 개선 후보 목록"))
   .addSubcommand((sub) =>
     sub

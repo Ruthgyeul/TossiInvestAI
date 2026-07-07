@@ -1,5 +1,5 @@
 // /cancel {orderId} — 미체결 주문 취소 (docs/DISCORD.md)
-import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
+import { ChatInputCommandInteraction, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 
 import { buildErrorEmbed, buildInfoEmbed } from "../embeds/info.js";
 import { cancelOrder } from "../lib/coreClient.js";
@@ -8,6 +8,7 @@ import type { BotCommand } from "./types.js";
 const data = new SlashCommandBuilder()
   .setName("cancel")
   .setDescription("미체결 주문 취소")
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addStringOption((opt) => opt.setName("orderid").setDescription("주문 ID").setRequired(true));
 
 async function execute(interaction: ChatInputCommandInteraction): Promise<void> {

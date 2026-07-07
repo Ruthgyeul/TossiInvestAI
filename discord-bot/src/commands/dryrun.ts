@@ -1,5 +1,5 @@
 // /dryrun on|off, /simulate on|off, /simstatus — 운영 모드 전환 (docs/SAFETY.md, docs/FUND_MANAGER.md)
-import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
+import { ChatInputCommandInteraction, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 
 import { buildErrorEmbed, buildInfoEmbed } from "../embeds/info.js";
 import { getSimStatus, setDryRun, setSimulate } from "../lib/coreClient.js";
@@ -8,6 +8,7 @@ import type { BotCommand } from "./types.js";
 const dryrunData = new SlashCommandBuilder()
   .setName("dryrun")
   .setDescription("DRY_RUN 모드 전환 (개발·디버깅 전용)")
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addStringOption((opt) =>
     opt.setName("state").setDescription("on|off").setRequired(true).addChoices(
       { name: "on", value: "on" },
@@ -30,6 +31,7 @@ async function dryrunExecute(interaction: ChatInputCommandInteraction): Promise<
 const simulateData = new SlashCommandBuilder()
   .setName("simulate")
   .setDescription("시뮬레이션 모드 전환 (실전 동일 리허설, 주문만 가상)")
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addStringOption((opt) =>
     opt.setName("state").setDescription("on|off").setRequired(true).addChoices(
       { name: "on", value: "on" },

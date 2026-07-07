@@ -113,6 +113,18 @@ REDIS_URL=redis://127.0.0.1:6379/0
 
 ---
 
+## 명령어 권한
+
+자금·주문·운영 모드·배포 상태를 바꾸는 명령(`/buy`, `/sell`, `/cancel`, `/stop`,
+`/resume`, `/simulate`, `/dryrun`, `/watchlist add|remove`, `/version approve|reject|rollback`)은
+`SlashCommandBuilder.setDefaultMemberPermissions(PermissionFlagsBits.Administrator)`로
+기본값을 관리자 전용으로 제한한다 — 길드에 개발자 외 멤버가 있어도 기본 상태에서는
+실행할 수 없다. 조회 전용 명령(`/status`, `/holdings`, `/orders`, `/fund`, `/apicost`,
+`/health`, `/simstatus`, `/report`, `/backtest`, `/version`(인자 없음))은 제한하지 않는다.
+필요하면 길드 설정(서버 설정 → 통합 → 앱)에서 특정 역할에 개별적으로 권한을 더 열어줄 수 있다.
+
+---
+
 ## Embed 메시지 형식
 
 모든 Embed는 아래 공통 구조를 따른다.

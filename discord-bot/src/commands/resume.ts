@@ -6,6 +6,7 @@ import {
   ButtonStyle,
   ChatInputCommandInteraction,
   ComponentType,
+  PermissionFlagsBits,
   SlashCommandBuilder,
 } from "discord.js";
 
@@ -17,7 +18,10 @@ const CONFIRM_TIMEOUT_MS = 30_000;
 const CONFIRM_ID = "resume-confirm";
 const CANCEL_ID = "resume-cancel";
 
-const data = new SlashCommandBuilder().setName("resume").setDescription("자동매매 재개");
+const data = new SlashCommandBuilder()
+  .setName("resume")
+  .setDescription("자동매매 재개")
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
 async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   const confirmRow = new ActionRowBuilder<ButtonBuilder>().addComponents(

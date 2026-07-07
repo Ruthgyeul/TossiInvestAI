@@ -4,6 +4,7 @@ discord-bot의 모든 요청은 `Authorization: Bearer {CORE_INTERNAL_API_TOKEN}
 토큰이 없거나 일치하지 않으면 401 {"error": "unauthorized"}를 반환한다. 다른 토큰으로 재시도하지 않는다.
 """
 
+import hmac
 from collections.abc import Awaitable, Callable
 
 from aiohttp import web
@@ -16,7 +17,11 @@ Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 
 @web.middleware
 async def auth_middleware(request: web.Request, handler: Handler) -> web.StreamResponse:
-    if request.headers.get("Authorization") != f"Bearer {settings.CORE_INTERNAL_API_TOKEN}":
+    expected = f"Bearer {settings.CORE_INTERNAL_API_TOKEN}"
+    provided = request.headers.get("Authorization", "")
+    # hmac.compare_digest로 상수 시간 비교한다 — `!=`는 첫 불일치 바이트에서 조기 종료돼
+    # 응답 시간차로 토큰을 바이트 단위로 추측하는 타이밍 공격에 노출된다.
+    if not hmac.compare_digest(provided, expected):
         return web.json_response({"error": "unauthorized"}, status=401)
     return await handler(request)
 
