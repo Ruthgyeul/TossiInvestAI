@@ -568,6 +568,75 @@ async def test_post_version_rollback_reinserts_target_as_new_deployment(
 
 
 @pytest.mark.asyncio
+async def test_post_buy_order_rejects_non_positive_quantity(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _execute_should_not_be_called(decision, mode, **kwargs):  # noqa: ANN001
+        raise AssertionError("수량 검증에 실패하면 execute()를 호출하면 안 된다")
+
+    monkeypatch.setattr(routes, "execute", _execute_should_not_be_called)
+
+    request = _mocked_post_request("/api/v1/orders/buy", {"symbol": "005930", "quantity": 0})
+    response = await routes.post_buy_order(request)
+    body = json_lib.loads(response.body)
+
+    assert response.status == 400
+    assert body["approved"] is False
+
+
+@pytest.mark.asyncio
+async def test_post_sell_order_rejects_negative_price(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _execute_should_not_be_called(decision, mode, **kwargs):  # noqa: ANN001
+        raise AssertionError("가격 검증에 실패하면 execute()를 호출하면 안 된다")
+
+    monkeypatch.setattr(routes, "execute", _execute_should_not_be_called)
+
+    request = _mocked_post_request(
+        "/api/v1/orders/sell", {"symbol": "005930", "quantity": 1, "price": -100}
+    )
+    response = await routes.post_sell_order(request)
+    body = json_lib.loads(response.body)
+
+    assert response.status == 400
+    assert body["approved"] is False
+
+
+@pytest.mark.asyncio
+async def test_post_buy_order_rejects_missing_symbol(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _execute_should_not_be_called(decision, mode, **kwargs):  # noqa: ANN001
+        raise AssertionError("바디 검증에 실패하면 execute()를 호출하면 안 된다")
+
+    monkeypatch.setattr(routes, "execute", _execute_should_not_be_called)
+
+    request = _mocked_post_request("/api/v1/orders/buy", {"quantity": 1})
+    response = await routes.post_buy_order(request)
+
+    assert response.status == 400
+
+
+@pytest.mark.asyncio
+async def test_post_buy_order_executes_with_valid_input(monkeypatch: pytest.MonkeyPatch) -> None:
+    from core.models import OrderResult
+
+    captured: dict = {}
+
+    async def _execute(decision, mode, **kwargs):  # noqa: ANN001
+        captured["decision"] = decision
+        captured["mode"] = mode
+        return OrderResult(filled=True, order_id="BIN-KR-ABC123", fill_price=74_800.0)
+
+    monkeypatch.setattr(routes, "execute", _execute)
+
+    request = _mocked_post_request("/api/v1/orders/buy", {"symbol": "005930", "quantity": 2})
+    response = await routes.post_buy_order(request)
+    body = json_lib.loads(response.body)
+
+    assert response.status == 200
+    assert body["approved"] is True
+    assert body["orderId"] == "BIN-KR-ABC123"
+    assert captured["decision"].quantity == 2
+    assert captured["mode"].market == "KR"
+
+
+@pytest.mark.asyncio
 async def test_post_version_rollback_rejects_unknown_version(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

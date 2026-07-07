@@ -2,6 +2,9 @@
 export const config = {
   token: process.env.DISCORD_BOT_TOKEN!,
   guildId: process.env.DISCORD_GUILD_ID!,
+  // 이 봇은 단일 개발자 전용이다 — Discord 길드 권한(Administrator 등)과 별개로,
+  // index.ts의 interactionCreate 핸들러가 이 ID와 일치하는 사용자의 명령만 실행한다.
+  developerId: process.env.DISCORD_DEVELOPER_ID!,
   channels: {
     status: process.env.DISCORD_STATUS_CHANNEL_ID!,
     analyze: process.env.DISCORD_ANALYZE_CHANNEL_ID!,

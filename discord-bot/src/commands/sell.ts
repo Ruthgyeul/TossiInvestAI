@@ -1,5 +1,5 @@
 // /sell {symbol} {qty} [price] — 수동 매도 (docs/DISCORD.md)
-import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
+import { ChatInputCommandInteraction, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 
 import { buildErrorEmbed, buildInfoEmbed } from "../embeds/info.js";
 import { placeSellOrder } from "../lib/coreClient.js";
@@ -8,9 +8,13 @@ import type { BotCommand } from "./types.js";
 const data = new SlashCommandBuilder()
   .setName("sell")
   .setDescription("수동 매도")
+  // 실제 자금이 움직이는 명령이므로 기본값을 관리자로 제한한다 (buy.ts와 동일 이유).
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addStringOption((opt) => opt.setName("symbol").setDescription("종목코드").setRequired(true))
-  .addIntegerOption((opt) => opt.setName("qty").setDescription("수량").setRequired(true))
-  .addNumberOption((opt) => opt.setName("price").setDescription("지정가 (생략 시 시장가)"));
+  .addIntegerOption((opt) => opt.setName("qty").setDescription("수량").setRequired(true).setMinValue(1))
+  .addNumberOption((opt) =>
+    opt.setName("price").setDescription("지정가 (생략 시 시장가)").setMinValue(0.01),
+  );
 
 async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   const symbol = interaction.options.getString("symbol", true);

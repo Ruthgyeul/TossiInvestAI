@@ -61,6 +61,10 @@
 class SafetyGate:
     async def check(self, order: Order, mode: RunMode) -> GateResult:
 
+        # 0. 수량·금액은 반드시 양수 (0 이하는 5번 조건의 상한 비교를 무력화한다)
+        if order.quantity <= 0 or order.amount_krw <= 0:
+            return GateResult.reject("주문 수량·금액은 0보다 커야 합니다")
+
         # 1. 긴급 정지 해제 상태
         if settings.EMERGENCY_STOP:
             return GateResult.reject("EMERGENCY_STOP 활성화")

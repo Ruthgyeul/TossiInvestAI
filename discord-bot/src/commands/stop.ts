@@ -1,5 +1,5 @@
 // /stop, /stop kr|us — 자동매매 긴급 정지 (docs/SAFETY.md EMERGENCY_STOP)
-import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
+import { ChatInputCommandInteraction, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 
 import { buildErrorEmbed, buildInfoEmbed } from "../embeds/info.js";
 import { stopTrading } from "../lib/coreClient.js";
@@ -8,6 +8,7 @@ import type { BotCommand } from "./types.js";
 const data = new SlashCommandBuilder()
   .setName("stop")
   .setDescription("전체 자동매매 즉시 중단")
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addStringOption((opt) =>
     opt.setName("market").setDescription("특정 시장만 중단").addChoices(
       { name: "KR", value: "KR" },

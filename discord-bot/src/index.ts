@@ -24,6 +24,14 @@ client.on("interactionCreate", async (interaction: Interaction) => {
   const command = commandMap.get(interaction.commandName);
   if (!command) return;
 
+  // 이 봇은 단일 개발자 전용이다 — 길드 권한 설정과 무관하게 DISCORD_DEVELOPER_ID와
+  // 일치하지 않는 사용자의 명령은 어떤 명령이든 여기서 차단한다 (config.ts 참고).
+  if (interaction.user.id !== config.developerId) {
+    const embed = buildErrorEmbed("[빈] ⛔ 권한 없음", "이 봇은 등록된 개발자만 사용할 수 있습니다.");
+    await interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => undefined);
+    return;
+  }
+
   try {
     await command.execute(interaction);
   } catch (err) {

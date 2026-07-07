@@ -81,10 +81,24 @@ async def get_orders(request: web.Request) -> web.Response:
 
 
 async def _place_manual_order(request: web.Request, action: str) -> web.Response:
-    body = await request.json()
-    symbol = body["symbol"]
-    quantity = int(body["quantity"])
-    price = body.get("price")
+    try:
+        body = await request.json()
+        symbol = str(body["symbol"])
+        quantity = int(body["quantity"])
+        price = body.get("price")
+        price = float(price) if price is not None else None
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return _json({"approved": False, "reason": "잘못된 요청 형식"}, status=400)
+
+    # amount_krw(price * quantity)가 Safety Gate 5번 조건(1회 주문 금액 상한)의 판단
+    # 기준이다 — 0 이하 값은 "amount_krw > MAX_SINGLE_ORDER_KRW"를 항상 통과시켜
+    # 한도를 무력화하고, SimulationPortfolio(core/simulation/portfolio.py)의 수량
+    # 가감 로직도 음수 입력을 전제하지 않으므로 여기서 먼저 거부한다.
+    if quantity <= 0:
+        return _json({"approved": False, "reason": "수량은 1 이상이어야 합니다"}, status=400)
+    if price is not None and price <= 0:
+        return _json({"approved": False, "reason": "가격은 0보다 커야 합니다"}, status=400)
+
     market = _infer_market(symbol)
 
     decision = Decision(

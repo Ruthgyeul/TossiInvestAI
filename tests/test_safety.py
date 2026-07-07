@@ -168,6 +168,22 @@ async def test_max_position_ratio_rejects_oversized_order(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("quantity,amount_krw", [(0, 50_000), (-1, 50_000), (1, 0), (1, -50_000)])
+async def test_non_positive_quantity_or_amount_rejects_order(
+    gate: SafetyGate, quantity: int, amount_krw: int
+) -> None:
+    """음수/0 수량·금액은 5번 조건(amount_krw > MAX_SINGLE_ORDER_KRW)을 무력화하므로
+    다른 어떤 조건보다 먼저 거부해야 한다 (예: 수동 주문 API의 입력 검증 누락에도 대비)."""
+    order = _make_order(amount_krw=amount_krw)
+    order.quantity = quantity
+
+    result = await gate.check(order, RunMode(mode="LIVE", market="KR"))
+
+    assert result.approved is False
+    assert "0보다 커야" in result.reason
+
+
+@pytest.mark.asyncio
 async def test_max_single_order_amount_rejects_order(gate: SafetyGate) -> None:
     order = _make_order(amount_krw=settings.MAX_SINGLE_ORDER_KRW + 1)
 
