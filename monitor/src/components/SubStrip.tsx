@@ -28,7 +28,7 @@ export function SubStrip({ data }: { data: SubStripSnapshot }) {
       <div className={styles.subStripFng}>
         <span className={styles.subStripLabel}>공포탐욕지수</span>
         <span className={styles.fngValue}>
-          {data.fearGreedIndex} {data.fearGreedLabel}
+          {data.fearGreedIndex ?? "-"} {data.fearGreedLabel}
         </span>
       </div>
     </div>

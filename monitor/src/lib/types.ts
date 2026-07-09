@@ -122,7 +122,8 @@ export interface SubStripSnapshot {
   tossOverlapSymbols: string[];
   tossOverlapHoldingCount: number;
   tossOverlapTotalCount: number;
-  fearGreedIndex: number;
+  /** null when core has not run a trading loop tick yet (no state_snapshot to derive it from). */
+  fearGreedIndex: number | null;
   fearGreedLabel: string;
 }
 

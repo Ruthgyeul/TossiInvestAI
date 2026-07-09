@@ -305,3 +305,18 @@ class LivePortfolioSnapshot(Base):
     total_value_krw: Mapped[int]
     cash_krw: Mapped[int]
     snapshot_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Report(_ModeMixin, Base):
+    """정기/즉시 리포트 생성 기록 — 전체 마크다운은 logs/reports/*.md 파일로만 남고
+    (core/report/generator.py), 여기는 모니터(docs/MONITOR.md)의 "리포트" 서브스트립이
+    쓸 한 줄 요약만 감사 가능한 형태로 영속화한다.
+    """
+
+    __tablename__ = "reports"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    market: Mapped[str] = mapped_column(String(3))
+    report_type: Mapped[str] = mapped_column(String(20))
+    summary: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

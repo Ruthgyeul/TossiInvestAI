@@ -13,20 +13,23 @@ export function PnlChart({ data }: { data: PnlChartSnapshot }) {
         </div>
       </div>
       <div className={styles.chartBars}>
-        {data.bars.map((value, i) => {
-          const { pos, neg } = barHeights(value);
-          return (
-            <div className={styles.chartBarCol} key={i}>
-              <div className={styles.chartBarUpWrap}>
-                <div className={styles.chartBarUp} style={{ height: `${pos}%` }} />
+        {(() => {
+          const maxAbs = Math.max(...data.bars.map((value) => Math.abs(value)), 1);
+          return data.bars.map((value, i) => {
+            const { pos, neg } = barHeights(value, maxAbs);
+            return (
+              <div className={styles.chartBarCol} key={i}>
+                <div className={styles.chartBarUpWrap}>
+                  <div className={styles.chartBarUp} style={{ height: `${pos}%` }} />
+                </div>
+                <div className={styles.chartBaseline} />
+                <div className={styles.chartBarDownWrap}>
+                  <div className={styles.chartBarDown} style={{ height: `${neg}%` }} />
+                </div>
               </div>
-              <div className={styles.chartBaseline} />
-              <div className={styles.chartBarDownWrap}>
-                <div className={styles.chartBarDown} style={{ height: `${neg}%` }} />
-              </div>
-            </div>
-          );
-        })}
+            );
+          });
+        })()}
       </div>
       <div className={styles.chartFooter}>
         <span className={styles.chartFooterLeft}>

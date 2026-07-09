@@ -7,6 +7,7 @@ import { config } from "./config.js";
 import { buildErrorEmbed } from "./embeds/info.js";
 import { onReady } from "./events/ready.js";
 import { subscribeToEvents } from "./lib/eventSubscriber.js";
+import { recordServiceStarted } from "./lib/serviceHeartbeat.js";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
@@ -15,6 +16,7 @@ const client = new Client({
 client.once("ready", () => {
   onReady(client)
     .then(() => subscribeToEvents(client))
+    .then(() => recordServiceStarted())
     .catch((err) => console.error("[빈] ready 처리 실패", err));
 });
 

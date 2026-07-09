@@ -9,6 +9,7 @@ from typing import Any
 import structlog
 from aiohttp import web
 
+from core.api.monitor_snapshot import build_monitor_snapshot
 from core.config import settings
 from core.db import store as db
 from core.db.redis import get_redis
@@ -488,6 +489,7 @@ async def get_health(request: web.Request) -> web.Response:
                 "diskPct": 0.0,
                 "tempC": 0.0,
                 "tossApiReachable": False,
+                "collectedAt": None,
             }
         )
 
@@ -499,8 +501,17 @@ async def get_health(request: web.Request) -> web.Response:
             "diskPct": snapshot["disk_pct"],
             "tempC": snapshot["temp_c"],
             "tossApiReachable": snapshot["toss_api_reachable"],
+            # .get(): 배포 직후 아직 갱신되지 않은 이전 포맷 캐시(collected_at 없음)와도
+            # 호환되도록 — 다음 5분 헬스체크 사이클이 지나면 자연히 채워진다.
+            "collectedAt": snapshot.get("collected_at"),
         }
     )
+
+
+async def get_monitor_snapshot(request: web.Request) -> web.Response:
+    """GET /api/v1/monitor/snapshot -> monitor/(Next.js 키오스크) 대시보드 전용 집계
+    (docs/MONITOR.md "데이터 흐름"). 여러 엔드포인트를 조합하지 않고 이 하나로 화면 전체를 채운다."""
+    return _json(await build_monitor_snapshot())
 
 
 async def get_version(request: web.Request) -> web.Response:
@@ -624,6 +635,7 @@ def register_routes(app: web.Application) -> None:
             web.delete("/api/v1/watchlist/{symbol}", delete_watchlist),
             web.post("/api/v1/backtest", post_backtest),
             web.get("/api/v1/health", get_health),
+            web.get("/api/v1/monitor/snapshot", get_monitor_snapshot),
             web.get("/api/v1/version", get_version),
             web.get("/api/v1/version/candidates", get_version_candidates),
             web.post("/api/v1/version/{id}/approve", post_version_approve),

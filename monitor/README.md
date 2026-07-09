@@ -18,7 +18,7 @@
 | 프레임워크 | Next.js (App Router) + TypeScript |
 | 스타일 | CSS Modules — 원본 디자인의 정확한 `oklch()` 값·px 단위를 그대로 옮기기 위해 Tailwind 대신 순수 CSS 사용 |
 | 폰트 | `next/font/google` — Noto Sans KR, JetBrains Mono (빌드 시 자체 호스팅, 런타임에 외부 요청 없음) |
-| 데이터 | `GET /api/snapshot` — 현재는 목업(`src/lib/mock-snapshot.ts`), 실데이터 연동은 아래 "데이터 연동" 참고 |
+| 데이터 | `GET /api/snapshot` — core의 `GET /api/v1/monitor/snapshot`을 서버 사이드에서 프록시. 아래 "데이터 연동" 참고 |
 | 외부 접속 인증 | `src/proxy.ts` (Next.js Proxy, Node.js 런타임) + Redis — 아래 "외부 접속 인증" 참고 |
 
 ## 디렉토리 구조
@@ -32,7 +32,7 @@ monitor/
 │   │   ├── page.tsx           # KioskStage + MonitorDashboard 조립
 │   │   ├── globals.css        # 디자인 토큰(oklch 색상 변수)
 │   │   ├── api/
-│   │   │   ├── snapshot/route.ts       # 스냅샷 JSON 엔드포인트 (현재 목업)
+│   │   │   ├── snapshot/route.ts       # core 스냅샷 프록시 (실패 시 502, MONITOR_USE_MOCK_DATA=true면 목업)
 │   │   │   └── auth/
 │   │   │       ├── request-code/route.ts  # 인증 코드 발급 (Redis 저장 + Discord DM 발행)
 │   │   │       └── verify-code/route.ts   # 인증 코드 검증 + 세션 쿠키 발급
@@ -42,7 +42,8 @@ monitor/
 │   │       └── AuthGate.module.css
 │   ├── components/
 │   │   ├── KioskStage.tsx     # 1024x600 캔버스를 실제 화면 크기에 맞춰 스케일링 (cursor:none 등 키오스크 전용 리셋 포함)
-│   │   ├── MonitorDashboard.tsx  # 30초 간격 폴링 + 전체 조립
+│   │   ├── MonitorDashboard.tsx  # 30초 간격 폴링 + 전체 조립. 첫 로드에 core가 응답 없으면 ConnectingScreen을 보여주고 5초 간격으로 재시도
+│   │   ├── ConnectingScreen.tsx  # core 미응답 시 표시하는 대기 화면 (상호작용 없음)
 │   │   ├── Dashboard.module.css  # 전체 대시보드 스타일 (섹션별 클래스)
 │   │   ├── LiveClock.tsx      # 1초마다 틱 (KST 고정)
 │   │   └── Header.tsx / SubStrip.tsx / TotalAssetsCard.tsx / PnlChart.tsx /
@@ -50,8 +51,11 @@ monitor/
 │   │       NewsPanel.tsx / EventCalendarPanel.tsx
 │   └── lib/
 │       ├── types.ts           # MonitorSnapshot 및 하위 타입
-│       ├── mock-snapshot.ts   # 목업 데이터 (디자인 원본 값과 동일)
-│       ├── format.ts          # KRW/퍼센트 포맷터, 부호 기반 색상 클래스 선택
+│       ├── get-snapshot.ts    # `/`와 `/api/snapshot`이 공유하는 단일 스냅샷 소스 (core 호출 또는 목업)
+│       ├── core-client.ts     # core 내부 API fetch (Bearer 토큰, 5초 타임아웃, server-only)
+│       ├── snapshot-mapper.ts # core JSON → MonitorSnapshot 방어적 매핑, 뉴스 감성 키워드 분류
+│       ├── mock-snapshot.ts   # 목업 데이터 (디자인 원본 값과 동일, MONITOR_USE_MOCK_DATA=true일 때만 사용)
+│       ├── format.ts          # KRW/퍼센트 포맷터, 부호 기반 색상 클래스 선택, 차트 막대 높이 자동 스케일링
 │       ├── ip.ts               # 내부 IP 판별, x-forwarded-for 파싱
 │       ├── redis.ts            # ioredis 싱글턴 (core·discord-bot과 동일 인스턴스)
 │       └── auth.ts             # 인증 코드 발급/검증, 시도 횟수, 영구 차단, 세션 서명
@@ -71,22 +75,36 @@ npm run lint
 
 ## 데이터 연동
 
-지금은 `src/lib/mock-snapshot.ts`가 정적 목업을 반환하고, `MonitorDashboard`가
-`/api/snapshot`을 30초마다 폴링해 화면을 갱신한다 (초 단위 시계는 `LiveClock`이
-별도로 매초 틱). 실데이터로 전환하려면:
+`MonitorDashboard`가 `/api/snapshot`을 30초마다 폴링해 화면을 갱신한다
+(초 단위 시계는 `LiveClock`이 별도로 매초 틱). `/api/snapshot`과 최초
+서버 렌더링(`page.tsx`) 둘 다 `src/lib/get-snapshot.ts`를 공유 소스로 쓴다.
 
-1. `core`의 내부 API(`docs/INTERNAL_API.md`)에 이 대시보드 전용 읽기 스냅샷
-   엔드포인트를 추가하거나, `/api/v1/status`·`/fund`·`/health` 등 기존
-   엔드포인트를 조합한다.
-2. `core`의 HTTP 서버는 `127.0.0.1`에만 바인딩하고 `Bearer` 토큰이 필요하다
-   (`CORE_INTERNAL_API_TOKEN`). 이 토큰은 **절대 브라우저로 내려보내지 않는다** —
-   `src/app/api/snapshot/route.ts`(Next.js Route Handler, 서버 사이드)에서만
-   `core`를 호출하고, 브라우저는 이 프록시 엔드포인트만 본다.
-3. `route.ts`의 `getMockSnapshot()` 호출을 실제 `fetch()` 호출로 교체하고,
-   `MonitorSnapshot` 타입에 맞게 응답을 매핑한다.
-4. 모니터는 트레이딩 코어와 같은 라즈베리파이에서 실행된다(`docs/DEPLOYMENT.md`).
-   물리적 키오스크 화면은 항상 로컬 네트워크로 붙지만, 외부에서 원격으로 상태를
-   확인하고 싶을 수도 있어 아래 "외부 접속 인증"으로 그 경로를 열어둔다.
+```
+get-snapshot.ts
+  → (MONITOR_USE_MOCK_DATA=true) → mock-snapshot.ts의 정적 목업
+  → (기본값)                     → core-client.ts가 core의
+                                    GET /api/v1/monitor/snapshot 호출
+                                    (Bearer CORE_INTERNAL_API_TOKEN, 5초 타임아웃)
+                                    → snapshot-mapper.ts가 MonitorSnapshot으로 매핑
+```
+
+- `core`의 HTTP 서버는 `127.0.0.1`에만 바인딩하고 `Bearer` 토큰이 필요하다
+  (`CORE_INTERNAL_API_TOKEN`). 이 토큰은 **절대 브라우저로 내려보내지 않는다** —
+  `core-client.ts`는 `server-only`로 표시돼 있어 Client Component에서 import하면
+  빌드 타임에 에러가 난다. 브라우저는 항상 `/api/snapshot` 프록시만 본다.
+- core 응답은 `MonitorSnapshot`과 거의 1:1 camelCase 필드 매핑이다. 유일한
+  예외는 뉴스 감성(`호재`/`악재`/`주의`) — core는 원문만 내려주고
+  `snapshot-mapper.ts`의 키워드 휴리스틱이 분류한다(표시 전용 판단이라
+  Claude를 호출하지 않는다, 루트 `CLAUDE.md` 절대 규칙 5·10).
+- `/api/snapshot` 호출이 실패하면 `MonitorDashboard`는 마지막으로 받은
+  정상 스냅샷을 그대로 유지한다. 최초 서버 렌더링 시점에 core가 응답이
+  없으면(예: 부팅 직후) `ConnectingScreen`을 보여주고 5초 간격으로
+  재시도하다가 스냅샷을 받으면 정상 30초 폴링으로 전환한다.
+- `MONITOR_USE_MOCK_DATA=true`는 core 없이 화면·디자인만 확인할 때만 쓴다
+  — 운영 환경 기본값은 `false`(실데이터)다.
+- 모니터는 트레이딩 코어와 같은 라즈베리파이에서 실행된다(`docs/DEPLOYMENT.md`).
+  물리적 키오스크 화면은 항상 로컬 네트워크로 붙지만, 외부에서 원격으로 상태를
+  확인하고 싶을 수도 있어 아래 "외부 접속 인증"으로 그 경로를 열어둔다.
 
 ## 외부 접속 인증
 

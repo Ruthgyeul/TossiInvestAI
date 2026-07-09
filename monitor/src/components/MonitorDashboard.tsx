@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { MonitorSnapshot } from "@/lib/types";
+import { ConnectingScreen } from "./ConnectingScreen";
 import styles from "./Dashboard.module.css";
 import { Header } from "./Header";
 import { SubStrip } from "./SubStrip";
@@ -14,9 +15,10 @@ import { NewsPanel } from "./NewsPanel";
 import { EventCalendarPanel } from "./EventCalendarPanel";
 
 const REFRESH_INTERVAL_MS = 30_000;
+const RETRY_INTERVAL_MS = 5_000;
 
-export function MonitorDashboard({ initialSnapshot }: { initialSnapshot: MonitorSnapshot }) {
-  const [snapshot, setSnapshot] = useState(initialSnapshot);
+export function MonitorDashboard({ initialSnapshot }: { initialSnapshot: MonitorSnapshot | null }) {
+  const [snapshot, setSnapshot] = useState<MonitorSnapshot | null>(initialSnapshot);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,12 +34,18 @@ export function MonitorDashboard({ initialSnapshot }: { initialSnapshot: Monitor
       }
     }
 
-    const id = setInterval(refresh, REFRESH_INTERVAL_MS);
+    // No snapshot yet (first load found core unreachable) — retry fast until
+    // one lands, then fall back to the normal poll cadence.
+    const id = setTimeout(refresh, snapshot ? REFRESH_INTERVAL_MS : RETRY_INTERVAL_MS);
     return () => {
       cancelled = true;
-      clearInterval(id);
+      clearTimeout(id);
     };
-  }, []);
+  }, [snapshot]);
+
+  if (!snapshot) {
+    return <ConnectingScreen />;
+  }
 
   return (
     <div className={styles.dashboard}>

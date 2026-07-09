@@ -22,6 +22,7 @@ from core.db.models import (
     MarketEvent,
     PaperTrade,
     Reflection,
+    Report,
     SafetyRejection,
     SimulationDailyPnl,
     SimulationPortfolioSnapshot,
@@ -58,6 +59,7 @@ _MODELS: list[type[DeclarativeBase]] = [
     ControlFlags,
     FundRebalance,
     LivePortfolioSnapshot,
+    Report,
 ]
 # Position은 core.db.models.Position이지만 core.models.Order와 이름이 겹쳐 별칭 처리한다.
 from core.db.models import Position as PositionRow  # noqa: E402
@@ -211,6 +213,53 @@ async def get_api_usage_month_summary() -> dict[str, Any]:
         "cost_krw": sum(row.cost_krw for row in rows),
         "cost_usd": sum(row.cost_usd for row in rows),
         "call_count": len(rows),
+    }
+
+
+async def get_api_usage_today_summary() -> dict[str, Any]:
+    """docs/MONITOR.md 총자산 카드 "API 호출·비용 (금일)" — 오늘(KST 자정 이후, UTC 근사) 합계."""
+    today_start_utc = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    async with _session() as session:
+        stmt = select(ApiUsage).where(ApiUsage.created_at >= today_start_utc)
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+
+    return {
+        "cost_krw": sum(row.cost_krw for row in rows),
+        "cost_usd": sum(row.cost_usd for row in rows),
+        "call_count": len(rows),
+        "input_tokens": sum(row.input_tokens for row in rows),
+        "output_tokens": sum(row.output_tokens for row in rows),
+        "model": rows[-1].model if rows else None,
+    }
+
+
+async def get_operation_days() -> dict[str, int]:
+    """docs/MONITOR.md 총자산 카드 "운용 일수 D+58 (LIVE 44일)".
+
+    core/trading/loop.py publish_status_update가 매 루프 틱마다 스냅샷을 적재하므로,
+    가장 오래된 스냅샷 시각을 "운용 시작일"의 실질적인 대리 지표로 쓴다 — 별도의
+    seed_started_at 컬럼을 새로 두지 않고 이미 쌓이고 있는 데이터를 재사용한다.
+    """
+    async with _session() as session:
+        sim_first = (
+            await session.execute(select(SimulationPortfolioSnapshot.snapshot_at).order_by(
+                SimulationPortfolioSnapshot.snapshot_at.asc()
+            ).limit(1))
+        ).scalar_one_or_none()
+        live_first = (
+            await session.execute(select(LivePortfolioSnapshot.snapshot_at).order_by(
+                LivePortfolioSnapshot.snapshot_at.asc()
+            ).limit(1))
+        ).scalar_one_or_none()
+
+    now = datetime.now(UTC)
+    first_ever = min(d for d in (sim_first, live_first) if d is not None) if (sim_first or live_first) else None
+
+    return {
+        "total_days": (now - first_ever).days if first_ever else 0,
+        "live_days": (now - live_first).days if live_first else 0,
     }
 
 

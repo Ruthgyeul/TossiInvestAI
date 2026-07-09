@@ -22,11 +22,18 @@ export function signClass(value: number): "positive" | "negative" | "neutral" {
   return "neutral";
 }
 
-/** Mirrors the source design's bar-height formula: 50 is flat, values further from 50 grow taller. */
-export function barHeights(value: number): { pos: number; neg: number } {
+/**
+ * Bar height (% of the up/down half) for a day's real PnL value, scaled against the
+ * largest magnitude in the visible window — auto-scaling like a real time-series chart,
+ * unlike the source design's fixed 0-100 demo scale. `maxAbs` should be
+ * `Math.max(...bars.map(Math.abs), 1)` from the caller so an all-zero window doesn't
+ * divide by zero.
+ */
+export function barHeights(value: number, maxAbs: number): { pos: number; neg: number } {
+  const magnitudePct = Math.min(100, (Math.abs(value) / maxAbs) * 100);
   return {
-    pos: value > 50 ? (value - 50) * 2 : 4,
-    neg: value <= 50 ? (50 - value) * 2 : 4,
+    pos: value > 0 ? magnitudePct : 4,
+    neg: value < 0 ? magnitudePct : 4,
   };
 }
 

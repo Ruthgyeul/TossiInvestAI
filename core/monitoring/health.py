@@ -3,6 +3,7 @@
 import asyncio
 import json
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 
 import psutil
 
@@ -27,6 +28,9 @@ class HealthSnapshot:
     disk_pct: float
     temp_c: float
     toss_api_reachable: bool
+    # docs/MONITOR.md "시스템 상태" 카드의 "HB N초 전"이 실제 경과 시간을 보여주려면
+    # 수집 시각이 스냅샷에 실려 있어야 한다 (이전에는 신선도를 알 방법이 없었다).
+    collected_at: str = ""
 
 
 def _read_sync_metrics() -> tuple[float, float, float]:
@@ -66,6 +70,7 @@ async def collect_health_snapshot() -> HealthSnapshot:
         disk_pct=disk_pct,
         temp_c=_read_cpu_temp_c(),
         toss_api_reachable=await _check_toss_reachable(),
+        collected_at=datetime.now(UTC).isoformat(),
     )
 
     redis = get_redis()

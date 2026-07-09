@@ -53,24 +53,37 @@ KR·US 포지션, AI 매매 판단, 시스템 헬스, Safety Gate 거부 이력,
 ## 데이터 흐름
 
 ```
-core (Python, 127.0.0.1:내부포트)
-   │  GET /api/v1/status, /fund, /health, ... (docs/INTERNAL_API.md)
+core (Python, 127.0.0.1:8000)
+   │  GET /api/v1/monitor/snapshot  (docs/INTERNAL_API.md, core/api/monitor_snapshot.py)
    │  Authorization: Bearer {CORE_INTERNAL_API_TOKEN}
    ▼
-monitor/src/app/api/snapshot/route.ts   (Next.js Route Handler, 서버 사이드)
+monitor/src/lib/core-client.ts + snapshot-mapper.ts   (server-only)
    │  토큰은 여기서만 사용 — 브라우저로 절대 내려가지 않는다
+   ▼
+monitor/src/app/api/snapshot/route.ts   (Next.js Route Handler, 서버 사이드)
+   │  core 응답 실패 시 502 반환 (스냅샷을 지어내지 않는다)
    ▼
 GET /api/snapshot  (같은 오리진, 인증 불필요 — 로컬 키오스크 전용)
    │
    ▼
 MonitorDashboard.tsx  (클라이언트, 30초 간격 폴링)
    │  LiveClock은 별도로 매초 KST 틱
+   │  폴링 실패 시 마지막 정상 스냅샷 유지, 최초 로드 실패 시 ConnectingScreen → 5초 재시도
    ▼
 7인치 모니터
 ```
 
-현재 `route.ts`는 `src/lib/mock-snapshot.ts`의 목업을 반환한다. 실데이터
-연동 절차는 `monitor/README.md`의 "데이터 연동" 참고.
+`core/api/monitor_snapshot.py`의 `build_monitor_snapshot()`이 여러 내부
+소스(포트폴리오, 헬스 스냅샷, 거래·안전장치 로그, `decisions.state_snapshot`,
+`reports` 테이블 등)를 하나의 응답으로 집계한다 — 모니터는 여러 엔드포인트를
+조합하지 않고 이 하나만 호출한다. 실데이터로 재현할 수 없는 값(토스 인기
+종목·공포탐욕지수는 Toss Open API에 해당 엔드포인트가 없다, `docs/TOSS_API.md`)은
+`core/market_data/collector.py`가 이미 만들어 둔 근사치를 `state_snapshot`에서
+재사용한다 — 별도 API 호출을 추가하지 않는다. 일별 손익 차트는 `daily_pnl`
+테이블이 실제로 채워지지 않으므로 포트폴리오 스냅샷의 일별 델타로 대신
+계산한다. 개발 중 core 없이 화면만 확인하려면 `MONITOR_USE_MOCK_DATA=true`로
+`src/lib/mock-snapshot.ts`의 정적 목업을 쓸 수 있다 — 자세한 흐름은
+`monitor/README.md`의 "데이터 연동" 참고.
 
 ---
 
