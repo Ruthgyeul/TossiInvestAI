@@ -6,6 +6,11 @@
   justify-content: center;
   background: var(--bg-page);
   overflow: hidden;
+  /* Kiosk display only: no pointer, no text selection, no accidental scroll/zoom.
+     Scoped here (not globally) so /auth — a real interactive page — stays usable. */
+  cursor: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .stage {

@@ -37,10 +37,13 @@ KR·US 포지션, AI 매매 판단, 시스템 헬스, Safety Gate 거부 이력,
 
 ## 상호작용 없음 — 하드 제약
 
-이 화면에는 버튼, 링크, 폼, 클릭/터치/호버 핸들러가 없다. 조작이 필요한
-동작(주문 승인/거부, `/stop`, `/resume` 등)은 전부 Discord(docs/DISCORD.md)의
-몫이다. 모니터에 상호작용 요소를 추가하는 PR은 이 문서의 설계 의도에
-어긋난다.
+**대시보드 화면(`/`)**에는 버튼, 링크, 폼, 클릭/터치/호버 핸들러가 없다. 조작이
+필요한 동작(주문 승인/거부, `/stop`, `/resume` 등)은 전부 Discord(docs/DISCORD.md)의
+몫이다. 대시보드에 상호작용 요소를 추가하는 PR은 이 문서의 설계 의도에 어긋난다.
+
+**유일한 예외는 `/auth`다.** 외부 IP 접속자가 인증 코드를 요청·입력하는 화면으로,
+물리적 키오스크 화면(항상 내부 IP로만 접속)과는 다른 용도·다른 사용자를 위한
+별개 라우트다 — 아래 "외부 접속 인증" 참고.
 
 ---
 
@@ -91,6 +94,74 @@ MonitorDashboard.tsx  (클라이언트, 30초 간격 폴링)
 실제 하드웨어 해상도가 정확히 1024×600이 아니어도 비율이 깨지지 않는다.
 컴포넌트 내부에 반응형 브레이크포인트를 추가하지 않는다 (`monitor/CLAUDE.md`
 절대 규칙 5).
+
+---
+
+## 외부 접속 인증
+
+물리적 키오스크는 항상 같은 라즈베리파이의 localhost에서 Chromium이 붙으므로
+내부 IP로 인식되어 인증 없이 그대로 보인다. 하지만 개발자가 집 밖에서 원격으로
+상태를 확인하고 싶을 수도 있어, **내부 IP가 아닌 접속에는 Discord DM으로 받는
+1회용 인증 코드**를 요구한다.
+
+### 흐름
+
+1. 외부 IP가 아무 경로로 접속하면 `src/proxy.ts`가 세션 쿠키를 확인하고, 없으면
+   `/auth`로 리다이렉트한다.
+2. `/auth`에서 "인증 코드 요청"을 누르면 `POST /api/auth/request-code`가 6자리
+   코드를 생성해 Redis에 저장(TTL `MONITOR_AUTH_CODE_TTL_SECONDS`, 기본 5분)하고,
+   `pubsub:events` 채널(docs/INTERNAL_API.md)에 `monitor_auth_code_issued` 이벤트를
+   발행한다.
+3. discord-bot의 기존 `eventSubscriber.ts`가 이 이벤트를 받아 코드를 **길드 채널이
+   아니라 `DISCORD_DEVELOPER_ID`에게 DM으로만** 전송한다
+   (`discord-bot/src/embeds/monitorAuth.ts`). `#stock-log`에는 코드 없이
+   `[REDACTED]`로만 남는다.
+4. 코드를 입력하면 `POST /api/auth/verify-code`가 Redis에 저장된 값과
+   타이밍 세이프 비교로 검증한다. 성공하면 요청 IP에 바인딩된 HMAC 서명 쿠키를
+   발급하고(`MONITOR_SESSION_TTL_SECONDS`, 기본 12시간), 실패하면 그 IP의 시도
+   횟수를 늘린다.
+5. 시도 횟수가 `MONITOR_AUTH_MAX_ATTEMPTS`(기본 3회)에 도달하면 그 IP를
+   **영구 차단**한다 — TTL 없이 `monitor:auth:blocked:{ip}`를 Redis에 남기므로
+   자동 만료되지 않고, 이후로는 `/auth`·`/api/auth/*`를 포함한 모든 요청이
+   403이다. 해제는 운영자가 수동으로 `redis-cli DEL monitor:auth:blocked:<ip>`를
+   실행해야만 한다.
+
+### monitor가 core·discord-bot과 연결되는 지점
+
+- **Redis**: `monitor`는 이제 `core`·`discord-bot`과 같은 Redis 인스턴스에
+  직접 연결하는 세 번째 서비스다 (`REDIS_URL`, `src/lib/redis.ts`). 코드·시도
+  횟수·차단 상태는 모두 `monitor:auth:*` 키 아래에 있다 — `core`의 트레이딩
+  데이터와 네임스페이스가 겹치지 않는다.
+- **`pubsub:events`**: 지금까지 이 채널은 `core`만 발행하고 discord-bot만
+  구독했다 (docs/INTERNAL_API.md). `monitor_auth_code_issued`부터는 `monitor`도
+  같은 채널에 발행하는 두 번째 publisher다. `core/events/publisher.py`의
+  `EventType` Literal은 core가 이 이벤트를 발행할 일이 없으므로 건드리지
+  않았다 — discord-bot의 TS `PubSubEvent` 타입에만 이 이벤트를 추가했다.
+- **discord-bot이 켜져 있지 않으면 코드 발급 자체가 무의미해진다** — DM을 보낼
+  주체가 없기 때문이다. `bin-discord.service`가 죽어 있는 동안에는 외부 접속
+  인증이 사실상 막힌다는 뜻이며, 이는 의도된 fail-closed 동작이다(코드를 우회해
+  통과시키는 폴백은 두지 않는다).
+
+### 보안 전제 — 반드시 읽는다
+
+- **`x-forwarded-for` 스푸핑**: Next.js Node 서버는 이 헤더가 비어 있을 때만
+  실제 TCP 소켓 주소로 채운다. 리버스 프록시 없이 라즈베리파이를 인터넷에 직접
+  노출하면, 공격자가 이 헤더를 직접 위조해 "내부 IP"로 위장하고 인증을 완전히
+  건너뛸 수 있다. **외부 접속을 실제로 열 계획이라면 반드시 신뢰할 수 있는
+  리버스 프록시(nginx 등) 뒤에 두고, 프록시가 클라이언트가 보낸 헤더값을
+  버리고 실제 연결 IP로 덮어쓰도록 설정한다.** 이 리버스 프록시 구성 자체는
+  이 저장소 범위 밖이다(`monitor/README.md` "외부 접속 인증" 참고).
+- **세션 쿠키는 `Secure`(HTTPS 전용)로 설정된다** — TLS 없이 평문으로 세션이
+  오가는 것을 막기 위한 의도된 제약이다. 리버스 프록시가 TLS를 종단하지 않으면
+  외부 접속에서 로그인 상태가 유지되지 않는다.
+- **세션은 요청 IP에 바인딩된다** — 쿠키가 유출돼도 다른 IP에서는 재사용할 수
+  없다. 대신 모바일 회선처럼 IP가 자주 바뀌면 재인증이 필요할 수 있다.
+- **원천 차단은 자동으로 풀리지 않는다.** 3회 실패가 영구적인 이유는 무차별
+  대입을 원천 봉쇄하기 위해서다 — 이 정책을 완화하는 변경(자동 만료, 횟수
+  상향 등)은 이 문서를 먼저 갱신한 뒤에 한다.
+
+환경변수 전체 목록과 로컬 실행 방법은 `monitor/README.md`의 "외부 접속 인증"·
+"실행" 참고.
 
 ---
 

@@ -65,15 +65,10 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
-  overflow: hidden;
-  background: #000;
 }
 
 body {
   font-family: var(--font-sans);
   color: var(--text-primary);
-  /* Kiosk display: no pointer, no text selection, no accidental scroll/zoom. */
-  cursor: none;
-  user-select: none;
-  -webkit-user-select: none;
+  background: var(--bg-page);
 }

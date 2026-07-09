@@ -10,6 +10,7 @@ import {
   buildSafetyRejectionEmbed,
 } from "../embeds/alert.js";
 import { buildInfoEmbed } from "../embeds/info.js";
+import { buildMonitorAuthCodeEmbed } from "../embeds/monitorAuth.js";
 import { buildNewsEmbed } from "../embeds/news.js";
 import { buildReportEmbed, ReportEmbedData } from "../embeds/report.js";
 import { buildBuyEmbed, buildSellEmbed, TradeEmbedData } from "../embeds/trade.js";
@@ -29,7 +30,11 @@ export interface PubSubEvent {
     | "status_update"
     | "reflection_ready"
     | "news_summary"
-    | "version_candidate_ready";
+    | "version_candidate_ready"
+    | "monitor_auth_code_issued";
+  // monitor publishes "SYSTEM" for monitor_auth_code_issued (docs/MONITOR.md) — the type
+  // stays 3-valued because `JSON.parse(...) as PubSubEvent` in subscribeToEvents() is an
+  // unchecked assertion, and no other event_type's handler ever sees that runtime value.
   mode: "LIVE" | "SIMULATION" | "DRY_RUN";
   market: "KR" | "US" | null;
   correlation_id: string | null;
@@ -40,7 +45,10 @@ export interface PubSubEvent {
 async function logRaw(client: Client, event: PubSubEvent): Promise<void> {
   const channel = await getChannel(client, "log");
   if (!channel) return;
-  const line = `[${event.mode}] ${event.event_type} ${JSON.stringify(event.payload)}`.slice(0, 4000);
+  // monitor_auth_code_issued의 코드는 DM 전용이다 — 길드에서 보이는 로그 채널에는 절대 남기지 않는다.
+  const payload =
+    event.event_type === "monitor_auth_code_issued" ? { ...event.payload, code: "[REDACTED]" } : event.payload;
+  const line = `[${event.mode}] ${event.event_type} ${JSON.stringify(payload)}`.slice(0, 4000);
   const embed = buildInfoEmbed("[빈] 이벤트 로그", `\`\`\`\n${line}\n\`\`\``);
   await channel.send({ embeds: [embed] }).catch((err) => console.error("log_channel_send_failed", err));
 }
@@ -206,6 +214,17 @@ async function handleVersionCandidateReady(client: Client, event: PubSubEvent): 
   await channel?.send({ embeds: [embed] });
 }
 
+async function handleMonitorAuthCode(client: Client, event: PubSubEvent): Promise<void> {
+  const payload = event.payload as { code: string; ip: string; expiresInSeconds: number };
+  const user = await client.users.fetch(config.developerId).catch(() => null);
+  if (!user) {
+    console.error("monitor_auth_dm_failed", "developer user fetch failed");
+    return;
+  }
+  const embed = buildMonitorAuthCodeEmbed(payload.code, payload.ip, payload.expiresInSeconds);
+  await user.send({ embeds: [embed] }).catch((err) => console.error("monitor_auth_dm_failed", err));
+}
+
 async function dispatch(client: Client, event: PubSubEvent): Promise<void> {
   switch (event.event_type) {
     case "trade_executed":
@@ -237,6 +256,9 @@ async function dispatch(client: Client, event: PubSubEvent): Promise<void> {
       break;
     case "backtest_complete":
       await handleBacktestComplete(client, event);
+      break;
+    case "monitor_auth_code_issued":
+      await handleMonitorAuthCode(client, event);
       break;
   }
 
