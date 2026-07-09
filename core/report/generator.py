@@ -257,6 +257,16 @@ async def generate_weekly_report() -> str:
         else "해당 없음"
     )
 
+    await db.insert(
+        "reports",
+        {
+            "mode": settings.run_mode,
+            "market": "ALL",
+            "report_type": "weekly",
+            "summary": _one_line_summary("ALL", portfolio),
+        },
+    )
+
     return "\n".join(
         [
             f"# [빈] 주간 성과 리포트 — {now:%Y-%m-%d}",
@@ -321,6 +331,16 @@ def _report_filename(market: str) -> Path:
     return _REPORTS_DIR / f"report_{market.lower()}_{now:%Y-%m-%d_%H%M}.md"
 
 
+def _one_line_summary(market: str, portfolio: dict) -> str:
+    """docs/MONITOR.md "리포트" 서브스트립용 한 줄 요약 — 전체 마크다운(REPORT.md 14개
+    항목)과 별개로, 이미 계산된 포트폴리오 수치만으로 규칙 기반 구성한다(Claude 미호출,
+    CLAUDE.md 절대 규칙 5)."""
+    pnl = portfolio["todayPnlKrw"]
+    pnl_desc = f"{'+' if pnl >= 0 else ''}{pnl:,}원"
+    cum_pct = portfolio["cumulativePnlPct"]
+    return f"{market} 금일 {pnl_desc} · 누적 {cum_pct:+.1%} · 보유 {len(portfolio['holdings'])}종목"
+
+
 async def generate_and_publish(
     market: Literal["KR", "US", "ALL"],
     report_type: ReportType,
@@ -347,12 +367,20 @@ async def generate_and_publish(
 
     _report_filename(market).write_text(content_md, encoding="utf-8")
 
+    mode: Literal["LIVE", "SIMULATION"] = "LIVE" if settings.run_mode == "LIVE" else "SIMULATION"
+    portfolio = await fund_manager.get_portfolio_status(mode)
+    await db.insert(
+        "reports",
+        {
+            "mode": settings.run_mode,
+            "market": market,
+            "report_type": report_type,
+            "summary": _one_line_summary(market, portfolio),
+        },
+    )
+
     chart_paths: list[str] = []
     try:
-        mode: Literal["LIVE", "SIMULATION"] = (
-            "LIVE" if settings.run_mode == "LIVE" else "SIMULATION"
-        )
-        portfolio = await fund_manager.get_portfolio_status(mode)
         if portfolio["holdings"]:
             holdings_value = {
                 h["symbol"]: h["quantity"] * h["currentPrice"] for h in portfolio["holdings"]

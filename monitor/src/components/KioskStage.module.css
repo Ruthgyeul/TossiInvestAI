@@ -1,0 +1,21 @@
+.viewport {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-page);
+  overflow: hidden;
+  /* Kiosk display only: no pointer, no text selection, no accidental scroll/zoom.
+     Scoped here (not globally) so /auth — a real interactive page — stays usable. */
+  cursor: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.stage {
+  width: 1024px;
+  height: 600px;
+  flex-shrink: 0;
+  transform-origin: center center;
+}

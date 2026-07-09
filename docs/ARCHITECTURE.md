@@ -93,7 +93,9 @@ TossInvestAI/
 │   ├── TOSS_API.md
 │   ├── CODING_RULES.md
 │   ├── SELF_IMPROVEMENT.md
-│   └── INTERNAL_API.md
+│   ├── INTERNAL_API.md
+│   ├── MONITOR.md
+│   └── DEPLOYMENT.md
 │
 ├── .env                             # 비밀 키 (git 커밋 금지)
 ├── .env.example                     # 환경변수 템플릿
@@ -128,6 +130,16 @@ TossInvestAI/
 │   │       └── eventSubscriber.ts   # Redis pubsub:events 구독 (core → discord-bot 알림)
 │   ├── package.json
 │   └── tsconfig.json
+│
+├── monitor/                         # Next.js 키오스크 모니터 (docs/MONITOR.md) — 상호작용 없음
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── layout.tsx           # 폰트(Noto Sans KR·JetBrains Mono), 뷰포트
+│   │   │   ├── page.tsx             # KioskStage + MonitorDashboard 조립
+│   │   │   └── api/snapshot/route.ts  # 스냅샷 JSON (현재 목업, 실연동 시 core 프록시)
+│   │   ├── components/              # Header·SubStrip·TotalAssetsCard·PnlChart 등 섹션별 컴포넌트
+│   │   └── lib/                     # MonitorSnapshot 타입, 목업 데이터, 포맷터
+│   └── package.json
 │
 ├── core/                            # Python 트레이딩 코어
 │   ├── main.py                      # bin-core.service 진입점 (스케줄러 + 내부 API 기동)
@@ -272,6 +284,12 @@ TossInvestAI/
 | `simulation_daily_pnl` | 시뮬레이션 가상 일별 손익 |
 | `simulation_portfolio_snapshots` | 시뮬레이션 포트폴리오 스냅샷 |
 | `live_portfolio_snapshots` | 실전 포트폴리오 스냅샷 (자산 추이 차트용) |
+| `reports` | 정기/즉시 리포트 발행 기록 — 전체 마크다운은 `logs/reports/*.md`에만 남고, 여기는 모니터(`docs/MONITOR.md`) 서브스트립이 쓰는 한 줄 요약만 감사 가능하게 영속화 |
+
+> `daily_pnl`/`simulation_daily_pnl`은 스키마상 존재하지만 실제 쓰기 경로가
+> 없다 — 모니터의 일별 손익 차트는 대신 `live_portfolio_snapshots`(또는
+> 시뮬레이션은 `simulation_portfolio_snapshots`)의 일별 델타로 계산한다
+> (`core/api/monitor_snapshot.py`).
 
 ### Redis
 

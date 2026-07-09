@@ -77,20 +77,31 @@ sudo apt install -y git postgresql redis-server build-essential
    cd ..
    ```
 
+8. **monitor** — `monitor/.env.example`를 `monitor/.env`로 복사하고
+   `MONITOR_SESSION_SECRET`을 `openssl rand -base64 32`로 채운다
+   (`monitor/README.md` "실행" 참고).
+   ```bash
+   cd monitor
+   cp .env.example .env
+   npm install
+   npm run build
+   cd ..
+   ```
+
 ---
 
 ## systemd 유닛 설치
 
-전체 유닛 파일 내용은 `deploy/systemd/bin-core.service`, `deploy/systemd/bin-discord.service`
-참고 (여기서 다시 옮겨 적지 않는다).
+전체 유닛 파일 내용은 `deploy/systemd/bin-core.service`, `deploy/systemd/bin-discord.service`,
+`deploy/systemd/bin-monitor.service` 참고 (여기서 다시 옮겨 적지 않는다).
 
 ```bash
 sudo cp deploy/systemd/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now bin-core.service bin-discord.service
+sudo systemctl enable --now bin-core.service bin-discord.service bin-monitor.service
 
 # 확인
-systemctl status bin-core bin-discord
+systemctl status bin-core bin-discord bin-monitor
 journalctl -u bin-core -f
 ```
 
@@ -108,7 +119,8 @@ journalctl -u bin-core -f
 git pull
 source venv/bin/activate && pip install -r requirements.txt
 cd discord-bot && npm install && npm run build && cd ..
-sudo systemctl restart bin-core bin-discord
+cd monitor && npm install && npm run build && cd ..
+sudo systemctl restart bin-core bin-discord bin-monitor
 ```
 
 > ⚠️ **장중 재시작 경고**: `core/trading/loop.py`가 시장별로 15분 주기 APScheduler

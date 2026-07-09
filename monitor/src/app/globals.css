@@ -1,0 +1,74 @@
+:root {
+  /* surfaces */
+  --bg-page: oklch(20% 0.006 260);
+  --bg-dashboard: oklch(14% 0.008 260);
+  --bg-card: oklch(19% 0.008 260);
+  --bg-tag: oklch(24% 0.008 260);
+
+  /* text */
+  --text-primary: oklch(93% 0.005 260);
+  --text-secondary: oklch(80% 0.005 260);
+  --text-muted-60: oklch(60% 0.01 260);
+  --text-muted-58: oklch(58% 0.01 260);
+  --text-muted-55: oklch(55% 0.01 260);
+  --text-muted-52: oklch(52% 0.01 260);
+  --text-muted-50: oklch(50% 0.01 260);
+  --text-muted-48: oklch(48% 0.01 260);
+
+  /* borders / dividers, darkest to lightest */
+  --border-24: oklch(24% 0.01 260);
+  --border-26: oklch(26% 0.01 260);
+  --border-27: oklch(27% 0.01 260);
+  --border-28: oklch(28% 0.01 260);
+  --border-30: oklch(30% 0.01 260);
+
+  /* red — KR-market convention: up / positive / BUY / KR tag */
+  --red-78: oklch(78% 0.16 25);
+  --red-65: oklch(65% 0.19 25);
+  --red-60: oklch(60% 0.19 25);
+  --red-58: oklch(58% 0.19 25);
+  --red-tag-text: oklch(65% 0.16 25);
+  --red-tag-bg: oklch(24% 0.03 25);
+  --red-badge-bg: oklch(26% 0.05 25);
+
+  /* blue — down / negative / SELL / US tag */
+  --blue-65: oklch(65% 0.14 250);
+  --blue-60: oklch(60% 0.14 250);
+  --blue-58: oklch(58% 0.14 250);
+  --blue-tag-bg: oklch(24% 0.03 250);
+
+  /* green — healthy / info log level / positive news */
+  --green-65: oklch(65% 0.16 150);
+  --green-bg: oklch(24% 0.03 150);
+
+  /* amber — pending approval / warn log level */
+  --amber-text: oklch(78% 0.14 85);
+  --amber-bg: oklch(26% 0.05 85);
+  --amber-warn-text: oklch(70% 0.15 85);
+
+  /* orange — high-risk event / error log level */
+  --orange-text: oklch(70% 0.17 30);
+  --orange-bg: oklch(26% 0.05 30);
+
+  --neutral-badge-bg: oklch(55% 0.01 260);
+
+  --font-sans: var(--font-noto-sans-kr), sans-serif;
+  --font-mono: var(--font-jetbrains-mono), monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background: var(--bg-page);
+}

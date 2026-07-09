@@ -1,0 +1,14 @@
+[Unit]
+Description=Bin Monitor (kiosk dashboard)
+After=network.target redis.service
+
+[Service]
+WorkingDirectory=/home/ruthgyeul/TossInvestAI/monitor
+ExecStart=/home/ruthgyeul/TossInvestAI/monitor/node_modules/.bin/next start
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=TZ=Asia/Seoul
+
+[Install]
+WantedBy=multi-user.target

@@ -48,12 +48,16 @@ async def test_generate_and_publish_renders_holdings_pnl_and_volume_charts(
     async def _get_recent_live_snapshots(limit: int = 30) -> list[dict]:
         return []
 
+    async def _insert(table: str, values: dict) -> dict:
+        return values
+
     monkeypatch.setattr(generator_module, "get_watchlist", _get_watchlist)
     monkeypatch.setattr(generator_module, "collect_market_snapshot", _collect_market_snapshot)
     monkeypatch.setattr(
         generator_module.fund_manager, "get_portfolio_status", _get_portfolio_status
     )
     monkeypatch.setattr(generator_module.db, "get_recent_live_snapshots", _get_recent_live_snapshots)
+    monkeypatch.setattr(generator_module.db, "insert", _insert)
 
     rendered: list[str] = []
 
@@ -107,11 +111,15 @@ async def test_generate_and_publish_renders_timeseries_charts_in_simulation(
             {"total_value_krw": 512_000, "cash_krw": 75_000, "snapshot_at": datetime(2026, 7, 2, tzinfo=UTC)},
         ]
 
+    async def _insert(table: str, values: dict) -> dict:
+        return values
+
     monkeypatch.setattr(generator_module, "get_watchlist", _get_watchlist)
     monkeypatch.setattr(
         generator_module.fund_manager, "get_portfolio_status", _get_portfolio_status
     )
     monkeypatch.setattr(generator_module.db, "get_recent_simulation_snapshots", _get_recent_simulation_snapshots)
+    monkeypatch.setattr(generator_module.db, "insert", _insert)
 
     rendered: list[str] = []
 
@@ -163,9 +171,13 @@ async def test_generate_and_publish_renders_timeseries_charts_in_live_mode(
             {"total_value_krw": 610_000, "cash_krw": 50_000, "snapshot_at": datetime(2026, 7, 2, tzinfo=UTC)},
         ]
 
+    async def _insert(table: str, values: dict) -> dict:
+        return values
+
     monkeypatch.setattr(generator_module, "get_watchlist", _get_watchlist)
     monkeypatch.setattr(generator_module.fund_manager, "get_portfolio_status", _get_portfolio_status)
     monkeypatch.setattr(generator_module.db, "get_recent_live_snapshots", _get_recent_live_snapshots)
+    monkeypatch.setattr(generator_module.db, "insert", _insert)
 
     rendered: list[str] = []
 
@@ -219,6 +231,9 @@ async def test_generate_and_publish_renders_index_comparison_for_all_markets(
     async def _get_recent_simulation_snapshots(limit: int = 30) -> list[dict]:
         return []
 
+    async def _insert(table: str, values: dict) -> dict:
+        return values
+
     monkeypatch.setattr(generator_module, "get_watchlist", _get_watchlist)
     monkeypatch.setattr(generator_module, "collect_market_snapshot", _collect_market_snapshot)
     monkeypatch.setattr(generator_module.fund_manager, "get_portfolio_status", _get_portfolio_status)
@@ -226,6 +241,7 @@ async def test_generate_and_publish_renders_index_comparison_for_all_markets(
     monkeypatch.setattr(
         generator_module.db, "get_recent_simulation_snapshots", _get_recent_simulation_snapshots
     )
+    monkeypatch.setattr(generator_module.db, "insert", _insert)
 
     rendered: list[tuple] = []
 
@@ -326,6 +342,7 @@ async def test_generate_weekly_report_includes_performance_metrics(
             "cumulativePnlKrw": 12_000,
             "cashBufferKrw": 76_800,
             "todayPnlKrw": 0,
+            "holdings": [],
         }
 
     from core.fund.manager import RebalanceResult
@@ -381,6 +398,9 @@ async def test_generate_weekly_report_includes_performance_metrics(
             {"total_value_krw": 512_000, "cash_krw": 75_000, "snapshot_at": now - timedelta(days=1)},
         ]
 
+    async def _insert(table: str, values: dict) -> dict:
+        return values
+
     monkeypatch.setattr(generator_module.fund_manager, "get_portfolio_status", _get_portfolio_status)
     monkeypatch.setattr(generator_module.fund_manager, "weekly_rebalance", _weekly_rebalance)
     monkeypatch.setattr(generator_module.fund_manager, "get_operating_funds_krw", _get_operating_funds_krw)
@@ -388,6 +408,7 @@ async def test_generate_weekly_report_includes_performance_metrics(
     monkeypatch.setattr(
         generator_module.db, "get_recent_simulation_snapshots", _get_recent_simulation_snapshots
     )
+    monkeypatch.setattr(generator_module.db, "insert", _insert)
 
     content = await generator_module.generate_weekly_report()
 
@@ -420,6 +441,7 @@ async def test_generate_weekly_report_flags_no_sells_for_review(
             "cumulativePnlKrw": 0,
             "cashBufferKrw": 75_000,
             "todayPnlKrw": 0,
+            "holdings": [],
         }
 
     from core.fund.manager import RebalanceResult
@@ -436,6 +458,9 @@ async def test_generate_weekly_report_flags_no_sells_for_review(
     async def _get_recent_simulation_snapshots(limit: int = 30) -> list[dict]:
         return []
 
+    async def _insert(table: str, values: dict) -> dict:
+        return values
+
     monkeypatch.setattr(generator_module.fund_manager, "get_portfolio_status", _get_portfolio_status)
     monkeypatch.setattr(generator_module.fund_manager, "weekly_rebalance", _weekly_rebalance)
     monkeypatch.setattr(generator_module.fund_manager, "get_operating_funds_krw", _get_operating_funds_krw)
@@ -443,6 +468,7 @@ async def test_generate_weekly_report_flags_no_sells_for_review(
     monkeypatch.setattr(
         generator_module.db, "get_recent_simulation_snapshots", _get_recent_simulation_snapshots
     )
+    monkeypatch.setattr(generator_module.db, "insert", _insert)
 
     content = await generator_module.generate_weekly_report()
 

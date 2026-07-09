@@ -28,6 +28,7 @@ Raspberry Pi 5에서 24/7 실행되는 AI 자동 주식 트레이딩 봇.
 | 레이어 | 기술 | 비고 |
 |--------|------|------|
 | Discord 봇 | **Discord.js v14 + TypeScript** | 24/7 상시 실행, systemd 관리 |
+| 키오스크 모니터 | **Next.js + TypeScript** | 7인치 모니터 24/7 상태판, 상호작용 없음 |
 | 트레이딩 코어 | **Python 3.11+ (asyncio)** | 매매 루프·분석·리포트 |
 | AI 결정 | **Claude API** (anthropic SDK) | 매수/매도 최종 판단, 직접 호출 |
 | AI 보조 | **Gemini Free Tier** | 뉴스 요약, 보조 분석 |
@@ -110,7 +111,10 @@ docs/
 ├── CODING_RULES.md        ← 코딩 컨벤션, 의존성, Prompt Caching 구현, 개발 순서
 ├── SELF_IMPROVEMENT.md    ← 자기개선 루프, 버전 관리·롤백, 배포 승인 절차
 ├── INTERNAL_API.md        ← discord-bot ↔ core 내부 통신 스펙 (HTTP API, Redis pub/sub)
+├── MONITOR.md             ← 키오스크 모니터(monitor/) 설계 근거, 데이터 흐름, 화면 구성
 └── DEPLOYMENT.md          ← 라즈베리파이 배포·업데이트·백업·롤백 절차
+
+monitor/                    ← Next.js 키오스크 앱 (자체 CLAUDE.md·README.md 보유)
 ```
 
 ---
@@ -128,3 +132,4 @@ docs/
 9. **모든 코드는 확장성과 지속 가능성을 우선한다** → `docs/CODING_RULES.md`
 10. **에이전트 프레임워크는 사용하지 않는다** — Claude API를 코드에서 직접 호출한다
 11. **실전 전환 전 SIMULATION 모드 2주 이상 필수** → 실전 DB와 시뮬레이션 DB는 절대 혼용하지 않는다
+12. **키오스크 모니터(`monitor/`)에는 상호작용 요소를 추가하지 않는다** — 오직 실시간 정보 표시용이다 → `docs/MONITOR.md`
