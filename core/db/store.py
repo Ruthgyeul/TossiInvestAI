@@ -213,6 +213,8 @@ async def get_api_usage_month_summary() -> dict[str, Any]:
         "cost_krw": sum(row.cost_krw for row in rows),
         "cost_usd": sum(row.cost_usd for row in rows),
         "call_count": len(rows),
+        "input_tokens": sum(row.input_tokens for row in rows),
+        "output_tokens": sum(row.output_tokens for row in rows),
     }
 
 

@@ -20,6 +20,16 @@
 .neutral {
   color: var(--text-secondary);
 }
+/* stat-card "tone" modifiers (성과/리스크 회전 카드) distinct from the pnl-sign colors above */
+.toneGood {
+  color: var(--risk-good);
+}
+.toneWarn {
+  color: var(--amber-text);
+}
+.toneBad {
+  color: var(--orange-text);
+}
 
 /* ---------- header ---------- */
 .header {
@@ -45,10 +55,10 @@
   justify-content: center;
   color: var(--bg-dashboard);
   font-weight: 900;
-  font-size: 11px;
+  font-size: 12.5px;
 }
 .title {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
 }
 .liveBadge {
@@ -68,13 +78,13 @@
 }
 .liveText {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 700;
   color: var(--red-78);
 }
 .versionTag {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--text-muted-50);
   background: var(--bg-tag);
   padding: 2px 6px;
@@ -85,71 +95,105 @@
   align-items: center;
   gap: 9px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--text-muted-58);
 }
 
-/* ---------- sub-strip ---------- */
+/* ---------- sub-strip: 성과/리스크(회전) · 공포탐욕지수 · 리포트(마퀴) ---------- */
 .subStrip {
   display: flex;
   align-items: center;
   padding: 5px 14px;
   border-bottom: 1px solid var(--border-24);
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 12.5px;
 }
-.subStripReport {
+.subStripPerf {
   display: flex;
   align-items: center;
   gap: 5px;
   padding-right: 14px;
   border-right: 1px solid var(--border-26);
+  white-space: nowrap;
+  flex-shrink: 0;
+  flex: 0 0 250px;
+  overflow: hidden;
 }
-.subStripSelfImprove {
+.subStripRisk {
   display: flex;
   align-items: center;
   gap: 5px;
   padding: 0 14px;
   border-right: 1px solid var(--border-26);
-}
-.subStripToss {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding-left: 14px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  flex: 0 0 250px;
+  overflow: hidden;
 }
 .subStripFng {
   display: flex;
   align-items: center;
   gap: 5px;
+  padding: 0 14px;
+  border-right: 1px solid var(--border-26);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.subStripReport {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   padding-left: 14px;
-  border-left: 1px solid var(--border-26);
-  margin-left: 14px;
+  flex: 1;
+  min-width: 0;
 }
 .subStripLabel {
   color: var(--text-muted-55);
   font-weight: 600;
-}
-.subStripValue {
-  color: var(--text-secondary);
-}
-.subStripMuted {
-  color: var(--text-muted-55);
-}
-.pendingBadge {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--amber-bg);
-  padding: 1px 6px;
-  border-radius: 6px;
-  color: var(--amber-text);
-  font-weight: 700;
+  flex-shrink: 0;
 }
 .fngValue {
   font-family: var(--font-mono);
   font-weight: 700;
   color: var(--text-secondary);
+}
+
+/* ---------- ticker (pattern B: imperative scroll-then-hold — 성과/리스크/뉴스) ---------- */
+.tickerViewport {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+}
+.tickerTrack {
+  display: inline-flex;
+  white-space: nowrap;
+  will-change: transform;
+}
+.tickerText {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ---------- marquee loop (pattern A: CSS keyframe, doubled content — 리포트/자기평가) ---------- */
+.marqueeViewport {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+}
+.marqueeTrack {
+  display: inline-flex;
+  white-space: nowrap;
+  will-change: transform;
+}
+.marqueeText {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.marqueeTrackVertical {
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
 }
 
 /* ---------- body grid ---------- */
@@ -180,13 +224,14 @@
   margin-bottom: 1px;
 }
 .sectionTitle {
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-muted-60);
 }
+/* default meta size (positions/AI decisions) — chart/system-health override with their own size */
 .sectionMeta {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 12.5px;
   color: var(--text-muted-55);
 }
 
@@ -198,20 +243,20 @@
   justify-content: space-between;
 }
 .totalAssetsLabel {
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--text-muted-58);
   font-weight: 600;
 }
 .totalAssetsValue {
   font-family: var(--font-mono);
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 700;
   letter-spacing: -0.5px;
   margin-top: 1px;
 }
 .totalAssetsChange {
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   margin-top: 1px;
 }
@@ -222,7 +267,7 @@
   padding: 6px 0;
   border-top: 1px solid var(--border-27);
   border-bottom: 1px solid var(--border-27);
-  font-size: 11px;
+  font-size: 12.5px;
 }
 .row {
   display: flex;
@@ -257,7 +302,7 @@
 .allocLabels {
   display: flex;
   justify-content: space-between;
-  font-size: 9.5px;
+  font-size: 12.5px;
   color: var(--text-muted-50);
   margin-top: 1px;
 }
@@ -265,13 +310,13 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 10.5px;
+  font-size: 12px;
 }
 .apiBlock {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 10.5px;
+  font-size: 12px;
   padding-top: 6px;
   border-top: 1px solid var(--border-27);
 }
@@ -281,18 +326,82 @@
   grid-column: 2 / 4;
   grid-row: 1 / 2;
 }
-.chartBars {
-  flex: 1;
+.chartTitleRow {
   display: flex;
   align-items: center;
+  gap: 8px;
+}
+.chartTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted-60);
+  width: 104px;
+  flex-shrink: 0;
+}
+.chartLegend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--text-muted-52);
+}
+.chartLegendItem {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.chartLegendSwatchLine {
+  width: 9px;
+  height: 1.5px;
+  background: oklch(85% 0.02 260);
+  display: inline-block;
+}
+.chartLegendSwatchDash {
+  width: 9px;
+  height: 0;
+  border-top: 1.5px dashed var(--blue-65);
+  display: inline-block;
+}
+.chartLegendSwatchArea {
+  width: 9px;
+  height: 6px;
+  background: oklch(60% 0.17 30 / 0.35);
+  display: inline-block;
+  border-radius: 1px;
+}
+.sectionMetaChart {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted-55);
+}
+.chartBarsWrap {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
   justify-content: space-between;
   min-height: 0;
+  gap: 1px;
+  position: relative;
+}
+.chartSvgOverlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 .chartBarCol {
   display: flex;
   flex-direction: column;
-  width: 11px;
+  flex: 1;
+  min-width: 0;
   height: 100%;
+}
+.chartBarBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .chartBarUpWrap {
   height: 50%;
@@ -301,7 +410,7 @@
   justify-content: center;
 }
 .chartBarUp {
-  width: 7px;
+  width: 6px;
   background: var(--red-60);
   border-radius: 2px 2px 0 0;
 }
@@ -316,25 +425,33 @@
   justify-content: center;
 }
 .chartBarDown {
-  width: 7px;
+  width: 6px;
   background: var(--blue-60);
   border-radius: 0 0 2px 2px;
+}
+.chartBarLabel {
+  height: 11px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  color: var(--text-muted-48);
+  text-align: center;
+  line-height: 11px;
+  white-space: nowrap;
+  overflow: hidden;
 }
 .chartFooter {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   padding-top: 4px;
   margin-top: 2px;
   border-top: 1px solid var(--border-27);
-  font-size: 9.5px;
-  white-space: nowrap;
+  font-size: 12.5px;
 }
 .chartFooterLeft {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
+  flex-direction: column;
+  gap: 2px;
 }
 .chartTotal {
   font-family: var(--font-mono);
@@ -359,29 +476,33 @@
   gap: 1px;
   overflow: hidden;
 }
-.serviceList {
+.sectionMetaHealth {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted-58);
+}
+.serviceRotator {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
-  font-size: 9px;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
   color: var(--text-muted-58);
   margin-bottom: 1px;
-  padding-bottom: 1px;
+  padding-bottom: 4px;
   border-bottom: 1px solid var(--border-27);
-}
-.serviceRow {
-  display: flex;
-  justify-content: space-between;
 }
 .serviceName {
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 .statusDot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 .statusOk {
   background: var(--green-65);
@@ -394,23 +515,32 @@
 }
 .serviceDetail {
   font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+.logList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 .logRow {
   display: flex;
   gap: 5px;
   align-items: baseline;
-  font-size: 10.5px;
+  font-size: 12px;
   line-height: 1.2;
 }
 .logTime {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 12.5px;
   color: var(--text-muted-48);
   flex-shrink: 0;
 }
 .logLevel {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 12.5px;
   font-weight: 700;
   flex-shrink: 0;
 }
@@ -430,10 +560,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 9.5px;
+  font-size: 12.5px;
   margin-top: 2px;
   padding-top: 2px;
   border-top: 1px solid var(--border-27);
+  flex-shrink: 0;
 }
 .subsectionTitle {
   font-weight: 600;
@@ -449,12 +580,12 @@
   display: flex;
   gap: 5px;
   align-items: baseline;
-  font-size: 10.5px;
+  font-size: 12px;
   line-height: 1.2;
 }
 .safetyTime {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 12.5px;
   color: var(--text-muted-48);
   flex-shrink: 0;
 }
@@ -465,7 +596,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 10.5px;
+  font-size: 12px;
   margin-top: 3px;
   padding-top: 3px;
   border-top: 1px solid var(--border-27);
@@ -479,18 +610,17 @@
 }
 .selfAssessTime {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 12.5px;
   color: var(--text-muted-55);
+}
+.selfAssessViewport {
+  overflow: hidden;
+  height: 34px;
 }
 .selfAssessSummary {
   color: var(--text-secondary);
-  font-size: 10.5px;
+  font-size: 12px;
   line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 /* ---------- positions card ---------- */
@@ -503,7 +633,7 @@
 .positionRow {
   display: flex;
   justify-content: space-between;
-  font-size: 10.5px;
+  font-size: 12px;
 }
 .positionName {
   font-weight: 600;
@@ -511,7 +641,7 @@
 .marketTag {
   font-family: var(--font-mono);
   font-weight: 700;
-  font-size: 8.5px;
+  font-size: 11.5px;
   padding: 1px 4px;
   border-radius: 3px;
   margin-right: 3px;
@@ -538,7 +668,7 @@
 .aiDecisionsCard {
   grid-column: 3 / 4;
   grid-row: 2 / 3;
-  gap: 2px;
+  gap: 1px;
   overflow: hidden;
 }
 .decisionRow {
@@ -548,13 +678,13 @@
 }
 .decisionTime {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10.5px;
   color: var(--text-muted-48);
   width: 30px;
 }
 .decisionBadge {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10.5px;
   font-weight: 700;
   color: #fff;
   padding: 1px 5px;
@@ -570,16 +700,16 @@
   background: var(--neutral-badge-bg);
 }
 .decisionSymbol {
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
 }
 .decisionConfidence {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 12.5px;
   color: var(--text-muted-55);
 }
 
-/* ---------- bottom strip: news + events ---------- */
+/* ---------- bottom strip: news + events (single-line rotating) ---------- */
 .bottomStrip {
   flex-shrink: 0;
   padding: 0 12px 8px;
@@ -588,23 +718,41 @@
   gap: 8px;
 }
 .panelCard {
-  padding: 8px 12px;
-  gap: 4px;
+  padding: 7px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
 }
 .panelTitle {
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-muted-60);
-  margin-bottom: 1px;
+  flex-shrink: 0;
 }
-.newsRow {
+.panelDivider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-27);
+  flex-shrink: 0;
+}
+.tickerCounter {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted-50);
+  flex-shrink: 0;
+}
+
+.newsContent {
   display: flex;
   gap: 6px;
   align-items: baseline;
+  min-width: 0;
+  flex: 1;
 }
 .sentimentBadge {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 12.5px;
   font-weight: 700;
   padding: 2px 6px;
   border-radius: 3px;
@@ -623,27 +771,39 @@
   background: var(--orange-bg);
 }
 .newsText {
-  font-size: 11px;
+  font-size: 12.5px;
+  white-space: nowrap;
 }
-.eventRow {
+
+.eventContent {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  font-size: 11px;
+  font-size: 12.5px;
+  min-width: 0;
+  flex: 1;
 }
-.riskBadge {
+.eventText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+.eventTag {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 12.5px;
   font-weight: 700;
-  color: var(--orange-text);
-  background: var(--orange-bg);
   padding: 2px 6px;
   border-radius: 3px;
   flex-shrink: 0;
+  margin-left: 8px;
 }
-.daysLabel {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
+.eventTagRisk {
+  color: var(--orange-text);
+  background: var(--orange-bg);
+}
+.eventTagNeutral {
   color: var(--text-muted-55);
-  flex-shrink: 0;
+  background: transparent;
 }

@@ -1,4 +1,4 @@
-import type { MonitorSnapshot, NewsSentiment } from "./types";
+import type { ChartPeriod, MonitorSnapshot, NewsSentiment, Stat, StatTone } from "./types";
 
 /**
  * core/api/monitor_snapshot.py returns camelCase keys matching MonitorSnapshot almost
@@ -25,6 +25,30 @@ function asArray<T>(value: unknown): T[] {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+const VALID_TONES: readonly StatTone[] = ["positive", "negative", "neutral", "good", "warn", "bad"];
+
+function mapStats(raw: unknown): Stat[] {
+  return asArray<{ label?: string; value?: string; tone?: string }>(raw)
+    .filter((item) => typeof item.label === "string" && typeof item.value === "string")
+    .map((item) => ({
+      label: item.label as string,
+      value: item.value as string,
+      tone: VALID_TONES.includes(item.tone as StatTone) ? (item.tone as StatTone) : "neutral",
+    }));
+}
+
+function mapChartPeriod(raw: unknown, fallbackLabel: string): ChartPeriod {
+  const period = asRecord(raw);
+  return {
+    label: String(period.label ?? fallbackLabel),
+    bars: asArray<number>(period.bars),
+    xLabels: asArray<string>(period.xLabels),
+    avgDailyReturnPct: Number(period.avgDailyReturnPct ?? 0),
+    winRatePct: Number(period.winRatePct ?? 0),
+    benchmarkBars: asArray<number>(period.benchmarkBars),
+  };
 }
 
 function mapNews(raw: unknown): MonitorSnapshot["news"] {
@@ -60,11 +84,8 @@ export function mapCoreSnapshot(raw: Record<string, unknown>): MonitorSnapshot {
     subStrip: {
       reportTime: String(subStrip.reportTime ?? "-"),
       reportSummary: String(subStrip.reportSummary ?? "-"),
-      selfImprovementPendingCount: Number(subStrip.selfImprovementPendingCount ?? 0),
-      selfImprovementVersion: String(subStrip.selfImprovementVersion ?? "-"),
-      tossOverlapSymbols: asArray<string>(subStrip.tossOverlapSymbols),
-      tossOverlapHoldingCount: Number(subStrip.tossOverlapHoldingCount ?? 0),
-      tossOverlapTotalCount: Number(subStrip.tossOverlapTotalCount ?? 0),
+      perfStats: mapStats(subStrip.perfStats),
+      riskStats: mapStats(subStrip.riskStats),
       fearGreedIndex: typeof subStrip.fearGreedIndex === "number" ? subStrip.fearGreedIndex : null,
       fearGreedLabel: String(subStrip.fearGreedLabel ?? "데이터 없음"),
     },
@@ -80,22 +101,25 @@ export function mapCoreSnapshot(raw: Record<string, unknown>): MonitorSnapshot {
       realizedPnlTodayKrw: Number(totalAssets.realizedPnlTodayKrw ?? 0),
       unrealizedPnlKrw: Number(totalAssets.unrealizedPnlKrw ?? 0),
       cumulativeReturnPct: Number(totalAssets.cumulativeReturnPct ?? 0),
+      seedKrw: Number(totalAssets.seedKrw ?? 0),
       operatingDays: Number(totalAssets.operatingDays ?? 0),
       liveDays: Number(totalAssets.liveDays ?? 0),
-      weeklyRebalanceDaysUntil: Number(totalAssets.weeklyRebalanceDaysUntil ?? 0),
-      lastReinvestmentKrw: Number(totalAssets.lastReinvestmentKrw ?? 0),
-      apiCallsToday: Number(totalAssets.apiCallsToday ?? 0),
       apiModel: String(totalAssets.apiModel ?? "-"),
-      tokensInK: Number(totalAssets.tokensInK ?? 0),
-      tokensOutK: Number(totalAssets.tokensOutK ?? 0),
+      apiCallsToday: Number(totalAssets.apiCallsToday ?? 0),
       apiCostTodayUsd: Number(totalAssets.apiCostTodayUsd ?? 0),
       apiCostTodayKrw: Number(totalAssets.apiCostTodayKrw ?? 0),
+      monthlyTokensInK: Number(totalAssets.monthlyTokensInK ?? 0),
+      monthlyTokensOutK: Number(totalAssets.monthlyTokensOutK ?? 0),
+      apiCallsMonthly: Number(totalAssets.apiCallsMonthly ?? 0),
+      apiCostMonthlyUsd: Number(totalAssets.apiCostMonthlyUsd ?? 0),
+      apiCostMonthlyKrw: Number(totalAssets.apiCostMonthlyKrw ?? 0),
     },
     chart: {
-      periodLabel: String(chart.periodLabel ?? "전체"),
-      bars: asArray<number>(chart.bars),
-      avgDailyReturnPct: Number(chart.avgDailyReturnPct ?? 0),
-      winRatePct: Number(chart.winRatePct ?? 0),
+      periods: [
+        mapChartPeriod(asArray(chart.periods)[0], "전체"),
+        mapChartPeriod(asArray(chart.periods)[1], "최근 15일"),
+        mapChartPeriod(asArray(chart.periods)[2], "일일"),
+      ],
       totalUpKrw: Number(chart.totalUpKrw ?? 0),
       upDays: Number(chart.upDays ?? 0),
       totalDownKrw: Number(chart.totalDownKrw ?? 0),

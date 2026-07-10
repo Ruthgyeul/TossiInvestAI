@@ -5,10 +5,12 @@ monitor/src/app/api/snapshot/route.ts는 여러 엔드포인트를 조합하지 
 값 중 일부는 이 프로젝트에 애초에 실데이터 소스가 없다(토스 Open API에 "인기 종목"
 랭킹·시장 지수 엔드포인트가 없다 — docs/TOSS_API.md) — 그런 항목은 이미 이 저장소가
 써 온 대체 지표를 그대로 재사용한다(`core/market_data/collector.py`의
-`_popular_top10`/`_fear_greed_index` 문서 주석 참고). 새로 지어내지 않는다.
+`_popular_top10`/`_fear_greed_index` 문서 주석, `core/report/generator.py`의
+`_market_composite_series` 참고). 새로 지어내지 않는다.
 """
 
 import json
+import statistics
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -19,6 +21,8 @@ from core.config import settings
 from core.db import store as db
 from core.db.redis import get_redis
 from core.fund.manager import fund_manager
+from core.market_data import indicators
+from core.market_data.watchlist import get_watchlist
 from core.models import Mode
 from core.monitoring.health import HEALTH_REDIS_KEY
 from core.toss import market as toss_market
@@ -37,6 +41,14 @@ _REPORT_LABELS: dict[str, str] = {
 # 있다 — 이 스냅샷은 문서상 공개 수치를 그대로 보여준다. 두 수를 맞추는 건 이 변경의
 # 범위 밖이라 TODO로 남긴다.
 _SAFETY_GATE_CONDITION_COUNT = 11
+
+# 서브 스트립 "성과"/"리스크" 회전 카드, 손익 차트 "일평균/승률" 계산의 표본 창.
+_ALPHA_WINDOW_DAYS = 20
+_SHARPE_WINDOW_DAYS = 30
+_VOLATILITY_WINDOW_DAYS = 5
+_RECENT_TRADES_LIMIT = 30
+_FULL_CHART_MAX_BARS = 60
+_RECENT_15D_BARS = 15
 
 
 def _current_mode() -> Mode:
@@ -112,36 +124,23 @@ async def _build_header(mode: Mode) -> dict[str, Any]:
     }
 
 
-async def _build_substrip(state: dict[str, Any] | None, holdings: list[dict]) -> dict[str, Any]:
+async def _build_substrip(
+    state: dict[str, Any] | None,
+    perf_stats: list[dict[str, Any]],
+    risk_stats: list[dict[str, Any]],
+) -> dict[str, Any]:
     reports = await db.fetch_all("reports", order_by="created_at", descending=True, limit=1)
     latest_report = reports[0] if reports else None
-    candidates = await db.get_pending_strategy_candidates()
-
-    toss_top10: list[str] = (state or {}).get("toss_popular_top10") or []
     fear_greed: int | None = (state or {}).get("fear_greed_index")
-    holding_symbols = {h["symbol"] for h in holdings}
-    overlap_holding_count = sum(1 for s in toss_top10 if s in holding_symbols)
 
     return {
         "reportTime": _format_log_time(latest_report["created_at"]).split(" ")[-1] if latest_report else "-",
         "reportSummary": latest_report["summary"] if latest_report else "아직 생성된 리포트가 없습니다",
-        "selfImprovementPendingCount": len(candidates),
-        "selfImprovementVersion": candidates[0]["strategy_version"] if candidates else "-",
-        "tossOverlapSymbols": toss_top10[:3],
-        "tossOverlapHoldingCount": overlap_holding_count,
-        "tossOverlapTotalCount": len(toss_top10),
+        "perfStats": perf_stats,
+        "riskStats": risk_stats,
         "fearGreedIndex": fear_greed,
         "fearGreedLabel": _fear_greed_label(fear_greed),
     }
-
-
-def _next_rebalance_days(now_kst: datetime) -> int:
-    """다음 주간 재배분은 매주 월요일 08:00 KST(core/scheduler/tasks.py weekly_report)."""
-    weekday = now_kst.weekday()  # Mon=0
-    days_ahead = (0 - weekday) % 7
-    if days_ahead == 0 and now_kst.hour >= 8:
-        days_ahead = 7
-    return days_ahead
 
 
 async def _build_total_assets(mode: Mode, portfolio: dict, exchange_rate: float) -> dict[str, Any]:
@@ -157,9 +156,9 @@ async def _build_total_assets(mode: Mode, portfolio: dict, exchange_rate: float)
             delta *= exchange_rate
         unrealized_pnl_krw += delta
 
-    rebalance = await fund_manager.get_last_rebalance(mode)
     op_days = await db.get_operation_days()
     api_today = await db.get_api_usage_today_summary()
+    api_month = await db.get_api_usage_month_summary()
 
     return {
         "totalKrw": portfolio["totalValueKrw"],
@@ -173,71 +172,404 @@ async def _build_total_assets(mode: Mode, portfolio: dict, exchange_rate: float)
         "realizedPnlTodayKrw": portfolio["todayPnlKrw"],
         "unrealizedPnlKrw": int(unrealized_pnl_krw),
         "cumulativeReturnPct": portfolio["cumulativePnlPct"] * 100,
+        "seedKrw": settings.INITIAL_SEED_KRW,
         "operatingDays": op_days["total_days"],
         "liveDays": op_days["live_days"],
-        "weeklyRebalanceDaysUntil": _next_rebalance_days(datetime.now(_KST)),
-        "lastReinvestmentKrw": rebalance["reinvested_krw"] if rebalance else 0,
-        "apiCallsToday": api_today["call_count"],
         "apiModel": _short_model_name(api_today["model"]),
-        "tokensInK": round(api_today["input_tokens"] / 1000, 1),
-        "tokensOutK": round(api_today["output_tokens"] / 1000, 1),
+        "apiCallsToday": api_today["call_count"],
         "apiCostTodayUsd": round(api_today["cost_usd"], 2),
         "apiCostTodayKrw": api_today["cost_krw"],
+        "monthlyTokensInK": round(api_month["input_tokens"] / 1000, 1),
+        "monthlyTokensOutK": round(api_month["output_tokens"] / 1000, 1),
+        "apiCallsMonthly": api_month["call_count"],
+        "apiCostMonthlyUsd": round(api_month["cost_usd"], 2),
+        "apiCostMonthlyKrw": api_month["cost_krw"],
     }
 
 
-async def _build_chart(mode: Mode) -> dict[str, Any]:
-    """daily_pnl/simulation_daily_pnl 테이블은 현재 어디서도 채워지지 않아(core/db/models.py의
-    두 모델을 찾아봐도 insert 지점이 없다) 실데이터 소스로 쓸 수 없다. 대신 매 루프 틱마다
-    이미 쌓이는 {live,simulation}_portfolio_snapshots에서 날짜별 마지막 스냅샷 간 차액으로
-    일별 손익(실현+평가)을 역산한다 — 새 트래킹을 추가하지 않고 이미 있는 데이터를 쓴다."""
-    snapshots = (
+async def _fetch_portfolio_snapshots(mode: Mode) -> list[dict[str, Any]]:
+    """오래된 순으로 정렬된 최근 포트폴리오 스냅샷(15분 간격 루프 틱마다 적재).
+
+    일별 손익 차트("전체"/"최근 15일")와 오늘 시간대별 차트("일일") 모두 이 한 번의
+    조회로 만든다 — daily_pnl 테이블은 실제로 채워지지 않아(core/db/models.py) 쓸 수 없다.
+    """
+    return (
         await db.get_recent_live_snapshots(limit=2000)
         if mode == "LIVE"
         else await db.get_recent_simulation_snapshots(limit=2000)
     )
 
-    empty = {
-        "periodLabel": "전체",
-        "bars": [],
-        "avgDailyReturnPct": 0.0,
-        "winRatePct": 0,
-        "totalUpKrw": 0,
-        "upDays": 0,
-        "totalDownKrw": 0,
-        "downDays": 0,
-        "netKrw": 0,
-    }
-    if len(snapshots) < 2:
-        return empty
 
+def _daily_last_values(snapshots: list[dict[str, Any]]) -> dict[date, float]:
+    """날짜별 마지막 스냅샷 총자산 — 오름차순 입력이므로 마지막 값이 그날의 종가다."""
     daily_last: dict[date, float] = {}
     for s in snapshots:
         day = _to_kst(s["snapshot_at"]).date()
-        daily_last[day] = float(s["total_value_krw"])  # 오름차순이므로 마지막 값이 그날의 종가
+        daily_last[day] = float(s["total_value_krw"])
+    return daily_last
 
-    days_sorted = sorted(daily_last.keys())
-    values = [daily_last[d] for d in days_sorted]
-    if len(values) < 2:
-        return empty
 
-    bars = [int(values[i] - values[i - 1]) for i in range(1, len(values))][-20:]
-    up = [b for b in bars if b > 0]
-    down = [b for b in bars if b < 0]
-    total_up = sum(up)
-    total_down = sum(down)
+def _hourly_last_values_today(snapshots: list[dict[str, Any]]) -> dict[datetime, float]:
+    today = datetime.now(_KST).date()
+    hourly_last: dict[datetime, float] = {}
+    for s in snapshots:
+        ts_kst = _to_kst(s["snapshot_at"])
+        if ts_kst.date() != today:
+            continue
+        bucket = ts_kst.replace(minute=0, second=0, microsecond=0)
+        hourly_last[bucket] = float(s["total_value_krw"])
+    return hourly_last
 
+
+def _bars_from_values(values: list[float]) -> list[int]:
+    return [int(values[i] - values[i - 1]) for i in range(1, len(values))]
+
+
+def _win_rate_pct(bars: list[int]) -> int:
+    if not bars:
+        return 0
+    wins = sum(1 for b in bars if b > 0)
+    return round(wins / len(bars) * 100)
+
+
+def _avg_daily_return_pct(bars: list[int]) -> float:
+    if not bars:
+        return 0.0
+    return sum(bars) / len(bars) / settings.INITIAL_SEED_KRW * 100
+
+
+def _day_labels(days: list[date]) -> list[str]:
+    """3개 바마다 "MM/DD" 라벨을 붙이고, 마지막 바는 항상 "오늘"로 표시한다."""
+    n = len(days)
+    labels = []
+    for i, d in enumerate(days):
+        if i == n - 1:
+            labels.append("오늘")
+        elif i % 3 == 0:
+            labels.append(f"{d.month}/{d.day}")
+        else:
+            labels.append("")
+    return labels
+
+
+def _hour_labels(hours: list[datetime]) -> list[str]:
+    n = len(hours)
+    labels = []
+    for i, h in enumerate(hours):
+        if i == n - 1:
+            labels.append("지금")
+        elif i % 3 == 0:
+            labels.append(f"{h.hour}시")
+        else:
+            labels.append("")
+    return labels
+
+
+async def _proxy_daily_returns(market: str) -> list[float] | None:
+    """관심 종목 일봉 종가의 동일가중 평균 시계열에서 뽑은 일별 수익률(비율), 오래된 순.
+
+    docs/TOSS_API.md에 KOSPI/NASDAQ 같은 시장 지수 엔드포인트가 없어, core/report/
+    generator.py `_market_composite_series`와 같은 방식(관심 종목 종가 동일가중 평균)을
+    벤치마크 대체 시계열로 재사용한다. 관심 종목이 없거나 공통 히스토리가 짧으면 None.
+    """
+    watchlist_items = await get_watchlist(market)
+    symbols = [item["symbol"] for item in watchlist_items]
+    if not symbols:
+        return None
+
+    all_closes = []
+    for symbol in symbols:
+        candles = await toss_market.get_candles(symbol, "1d")
+        closes = [c["close"] for c in candles]
+        if closes:
+            all_closes.append(closes)
+    if not all_closes:
+        return None
+
+    min_len = min(len(closes) for closes in all_closes)
+    if min_len < 2:
+        return None
+
+    trimmed = [closes[-min_len:] for closes in all_closes]
+    composite = [sum(day_values) / len(day_values) for day_values in zip(*trimmed, strict=True)]
+    return [
+        (composite[i] - composite[i - 1]) / composite[i - 1]
+        for i in range(1, len(composite))
+        if composite[i - 1] > 0
+    ]
+
+
+def _compound_return(returns: list[float]) -> float:
+    total = 1.0
+    for r in returns:
+        total *= 1 + r
+    return total - 1
+
+
+def _blended_benchmark_bars(
+    n: int,
+    kr_returns: list[float] | None,
+    us_returns: list[float] | None,
+    kr_weight: float,
+    us_weight: float,
+    base_krw: float,
+) -> list[int]:
+    """포트폴리오 KR/US 투자 비중으로 가중한 벤치마크 일별 손익(KRW 환산 근사치).
+
+    실제 일별 자산 기준선을 과거 시점별로 추적하지 않으므로, 현재 총자산(`base_krw`)을
+    고정 기준선으로 삼아 벤치마크가 그 기준선에서 같은 비율로 움직였다면의 근사 손익을
+    낸다 — 손익 차트의 벤치마크 겹쳐그리기용 참고선이지 정밀한 성과 귀속이 아니다.
+    """
+    if not kr_returns and not us_returns:
+        return []
+
+    def _tail(returns: list[float] | None) -> list[float]:
+        returns = returns or []
+        if len(returns) >= n:
+            return returns[-n:]
+        return [0.0] * (n - len(returns)) + returns
+
+    kr_tail = _tail(kr_returns)
+    us_tail = _tail(us_returns)
+    blended = [kr_weight * kr + us_weight * us for kr, us in zip(kr_tail, us_tail, strict=True)]
+    return [round(r * base_krw) for r in blended]
+
+
+async def _build_chart_period(
+    label: str,
+    values: list[float],
+    day_keys: list[date] | list[datetime],
+    *,
+    hourly: bool,
+    kr_returns: list[float] | None,
+    us_returns: list[float] | None,
+    kr_weight: float,
+    us_weight: float,
+    base_krw: float,
+) -> dict[str, Any]:
+    bars = _bars_from_values(values)
+    x_labels = _hour_labels(day_keys[1:]) if hourly else _day_labels(day_keys[1:])  # type: ignore[arg-type]
+    benchmark_bars = [] if hourly else _blended_benchmark_bars(
+        len(bars), kr_returns, us_returns, kr_weight, us_weight, base_krw
+    )
     return {
-        "periodLabel": "전체",
+        "label": label,
         "bars": bars,
-        "avgDailyReturnPct": (sum(bars) / len(bars) / settings.INITIAL_SEED_KRW * 100) if bars else 0.0,
-        "winRatePct": round(len(up) / len(bars) * 100) if bars else 0,
-        "totalUpKrw": total_up,
-        "upDays": len(up),
-        "totalDownKrw": total_down,
-        "downDays": len(down),
-        "netKrw": total_up + total_down,
+        "xLabels": x_labels,
+        "avgDailyReturnPct": _avg_daily_return_pct(bars),
+        "winRatePct": _win_rate_pct(bars),
+        "benchmarkBars": benchmark_bars,
     }
+
+
+def _concentration_stat(holdings: list[dict], exchange_rate: float) -> dict[str, Any] | None:
+    values = []
+    for h in holdings:
+        value = h["quantity"] * h["currentPrice"]
+        if h["market"] == "US":
+            value *= exchange_rate
+        values.append((h["symbol"], value))
+    invested_total = sum(v for _, v in values)
+    if not values or invested_total <= 0:
+        return None
+
+    top_symbol, top_value = max(values, key=lambda item: item[1])
+    ratio_pct = top_value / invested_total * 100
+    cap_pct = settings.MAX_POSITION_RATIO * 100
+    if ratio_pct >= cap_pct:
+        tone, label = "bad", "위험"
+    elif ratio_pct >= cap_pct * 0.8:
+        tone, label = "warn", "주의"
+    else:
+        tone, label = "good", "정상"
+
+    return {"label": "집중도", "value": f"{label} · {top_symbol} {ratio_pct:.1f}%", "tone": tone}
+
+
+def _volatility_stat(days_sorted: list[date], daily_last: dict[date, float]) -> dict[str, Any] | None:
+    recent_days = days_sorted[-(_VOLATILITY_WINDOW_DAYS + 1):]
+    if len(recent_days) < 3:
+        return None
+    values = [daily_last[d] for d in recent_days]
+    returns_pct = [
+        (values[i] - values[i - 1]) / values[i - 1] * 100
+        for i in range(1, len(values))
+        if values[i - 1] > 0
+    ]
+    if len(returns_pct) < 2:
+        return None
+    stdev = statistics.pstdev(returns_pct)
+    if stdev < 0.5:
+        tone, label = "good", "낮음"
+    elif stdev < 1.5:
+        tone, label = "warn", "보통"
+    else:
+        tone, label = "bad", "높음"
+    return {"label": "변동성", "value": f"{label} · 최근 {len(returns_pct)}일", "tone": tone}
+
+
+def _mdd_stat(values: list[float]) -> dict[str, Any] | None:
+    if len(values) < 2:
+        return None
+    mdd = indicators.calculate_max_drawdown_pct(values)
+    return {"label": "MDD", "value": f"{mdd * 100:.1f}% · 시드 대비", "tone": "bad"}
+
+
+def _var_stat(bars: list[int]) -> dict[str, Any] | None:
+    if len(bars) < 10:
+        return None
+    sorted_bars = sorted(bars)
+    idx = max(0, min(len(sorted_bars) - 1, round(0.05 * (len(sorted_bars) - 1))))
+    var_krw = sorted_bars[idx]
+    return {"label": "VaR (95%)", "value": f"{var_krw:+,}원 · 1일 기준", "tone": "bad"}
+
+
+def _sharpe_stat(values: list[float]) -> dict[str, Any] | None:
+    if len(values) < 5:
+        return None
+    sharpe = indicators.calculate_sharpe_ratio(values)
+    tone = "positive" if sharpe > 0 else "neutral"
+    return {"label": "샤프지수", "value": f"{sharpe:.2f} · 최근 {len(values) - 1}일", "tone": tone}
+
+
+def _win_streak_stat(bars: list[int]) -> dict[str, Any] | None:
+    if not bars:
+        return None
+    streak = 0
+    for b in reversed(bars):
+        if b > 0:
+            streak += 1
+        else:
+            break
+    tone = "positive" if streak > 0 else "neutral"
+    value = f"{streak}일 · 진행 중" if streak > 0 else "0일 · 없음"
+    return {"label": "연속수익", "value": value, "tone": tone}
+
+
+def _profit_factor_and_win_rate(trades: list[dict]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    closed = [t for t in trades if t.get("pnl_krw") is not None]
+    if not closed:
+        return None, None
+    wins = [t for t in closed if t["pnl_krw"] > 0]
+    losses = [t for t in closed if t["pnl_krw"] < 0]
+
+    win_rate_stat = {
+        "label": "승률",
+        "value": f"{round(len(wins) / len(closed) * 100)}% · 최근 {len(closed)}건",
+        "tone": "neutral",
+    }
+
+    gross_profit = sum(t["pnl_krw"] for t in wins)
+    gross_loss = abs(sum(t["pnl_krw"] for t in losses))
+    if gross_loss > 0:
+        profit_factor = gross_profit / gross_loss
+    else:
+        profit_factor = 999.0 if gross_profit > 0 else None
+    profit_factor_stat = None
+    if profit_factor is not None:
+        tone = "positive" if profit_factor >= 1 else "negative"
+        value = f"{profit_factor:.1f} · 평균 수익/손실"
+        profit_factor_stat = {"label": "손익비", "value": value, "tone": tone}
+    return win_rate_stat, profit_factor_stat
+
+
+def _fill_rate_stat(trades: list[dict], rejections: list[dict]) -> dict[str, Any] | None:
+    """"체결률" = Safety Gate를 통과해 실제 체결된 시도 / (체결 + Safety Gate 거부) 시도.
+
+    LIVE 모드의 `orders` 테이블은 Safety Gate를 통과한 주문만 기록해 실제 체결 실패
+    케이스가 없고, SIMULATION은 애초에 `orders`에 쓰지 않는다(core/trading/executor.py) —
+    두 모드 모두에서 의미가 통하도록 "매매 시그널이 최종 체결까지 이어졌는가"를
+    체결 건수 대 Safety Gate 거부 건수의 비율로 근사한다.
+    """
+    filled = len(trades)
+    attempted = filled + len(rejections)
+    if attempted == 0:
+        return None
+    pct = round(filled / attempted * 100)
+    return {"label": "체결률", "value": f"{pct}% · {filled}/{attempted}건", "tone": "neutral"}
+
+
+def _alpha_stat(
+    label_suffix: str, holdings: list[dict], market: str, proxy_returns: list[float] | None
+) -> dict[str, Any] | None:
+    market_holdings = [h for h in holdings if h["market"] == market]
+    if not market_holdings or not proxy_returns:
+        return None
+
+    total_value = sum(h["quantity"] * h["currentPrice"] for h in market_holdings)
+    if total_value <= 0:
+        return None
+    portfolio_return_pct = sum(
+        h["pnlPct"] * (h["quantity"] * h["currentPrice"]) for h in market_holdings
+    ) / total_value * 100
+
+    proxy_return_pct = _compound_return(proxy_returns[-_ALPHA_WINDOW_DAYS:]) * 100
+    alpha_pp = portfolio_return_pct - proxy_return_pct
+    tone = "positive" if alpha_pp >= 0 else "negative"
+    return {"label": "알파", "value": f"{alpha_pp:+.1f}%p · {label_suffix} 대비", "tone": tone}
+
+
+async def _build_perf_stats(
+    mode: Mode,
+    portfolio: dict,
+    daily_last: dict[date, float],
+    days_sorted: list[date],
+    kr_returns: list[float] | None,
+    us_returns: list[float] | None,
+) -> list[dict[str, Any]]:
+    holdings = portfolio["holdings"]
+    trade_table = "trades" if mode == "LIVE" else "simulation_trades"
+    trades = await db.fetch_all(
+        trade_table, order_by="created_at", descending=True, limit=_RECENT_TRADES_LIMIT
+    )
+    rejections = await db.fetch_all(
+        "safety_rejections",
+        {"mode": mode},
+        order_by="created_at",
+        descending=True,
+        limit=_RECENT_TRADES_LIMIT,
+    )
+
+    values = [daily_last[d] for d in days_sorted]
+    all_bars = _bars_from_values(values)
+    sharpe_window = values[-(_SHARPE_WINDOW_DAYS + 1):]
+
+    win_rate_stat, profit_factor_stat = _profit_factor_and_win_rate(trades)
+
+    stats = [
+        _alpha_stat("KOSPI", holdings, "KR", kr_returns),
+        _alpha_stat("S&P500", holdings, "US", us_returns),
+        win_rate_stat,
+        _fill_rate_stat(trades, rejections),
+        profit_factor_stat,
+        _sharpe_stat(sharpe_window),
+        _win_streak_stat(all_bars),
+    ]
+    resolved = [s for s in stats if s is not None]
+    if not resolved:
+        return [{"label": "성과", "value": "데이터 수집 중", "tone": "neutral"}]
+    return resolved
+
+
+def _build_risk_stats(
+    portfolio: dict,
+    exchange_rate: float,
+    daily_last: dict[date, float],
+    days_sorted: list[date],
+) -> list[dict[str, Any]]:
+    values = [daily_last[d] for d in days_sorted]
+    all_bars = _bars_from_values(values)
+
+    stats = [
+        _concentration_stat(portfolio["holdings"], exchange_rate),
+        _volatility_stat(days_sorted, daily_last),
+        _mdd_stat(values),
+        _var_stat(all_bars),
+    ]
+    resolved = [s for s in stats if s is not None]
+    if not resolved:
+        return [{"label": "리스크", "value": "데이터 수집 중", "tone": "neutral"}]
+    return resolved
 
 
 def _process_uptime_label() -> str:
@@ -286,6 +618,11 @@ async def _build_system_health(mode: Mode) -> dict[str, Any]:
         await db.fetch_all("control_flags", limit=1)
     except Exception:  # noqa: BLE001 — 헬스 표시용 ping이라 어떤 이유로든 실패하면 오류로 취급
         db_ok = False
+    toss_ok = True
+    try:
+        await toss_market.get_exchange_rate()
+    except Exception:  # noqa: BLE001 — 위와 동일한 이유
+        toss_ok = False
 
     services = [
         {"name": "core", "status": "ok", "detail": core_uptime},
@@ -296,6 +633,8 @@ async def _build_system_health(mode: Mode) -> dict[str, Any]:
         },
         {"name": "scheduler", "status": "ok", "detail": core_uptime},
         {"name": "DB·Redis", "status": "ok" if db_ok else "error", "detail": "정상" if db_ok else "오류"},
+        {"name": "Toss API", "status": "ok" if toss_ok else "error", "detail": "정상" if toss_ok else "오류"},
+        {"name": "매매 판단 모델 API", "status": "ok", "detail": "정상"},
     ]
 
     trade_table = "trades" if mode == "LIVE" else "simulation_trades"
@@ -417,16 +756,115 @@ async def build_monitor_snapshot() -> dict[str, Any]:
     state = await _latest_decision_state()
     ai_decisions, ai_decisions_today = await _build_ai_decisions()
 
+    snapshots = await _fetch_portfolio_snapshots(mode)
+    daily_last = _daily_last_values(snapshots)
+    days_sorted = sorted(daily_last.keys())
+    kr_returns = await _proxy_daily_returns("KR") if days_sorted else None
+    us_returns = await _proxy_daily_returns("US") if days_sorted else None
+
+    perf_stats = await _build_perf_stats(mode, portfolio, daily_last, days_sorted, kr_returns, us_returns)
+    risk_stats = _build_risk_stats(portfolio, exchange_rate, daily_last, days_sorted)
+    chart = await _build_chart(portfolio, snapshots, daily_last, days_sorted, kr_returns, us_returns)
+
     return {
         "generatedAt": datetime.now(UTC).isoformat(),
         "header": await _build_header(mode),
-        "subStrip": await _build_substrip(state, portfolio["holdings"]),
+        "subStrip": await _build_substrip(state, perf_stats, risk_stats),
         "totalAssets": await _build_total_assets(mode, portfolio, exchange_rate),
-        "chart": await _build_chart(mode),
+        "chart": chart,
         "systemHealth": await _build_system_health(mode),
         "positions": _build_positions(portfolio["holdings"]),
         "aiDecisions": ai_decisions,
         "aiDecisionsCountToday": ai_decisions_today,
         "news": _build_news(state),
         "events": await _build_events(),
+    }
+
+
+async def _build_chart(
+    portfolio: dict,
+    snapshots: list[dict[str, Any]],
+    daily_last: dict[date, float],
+    days_sorted: list[date],
+    kr_returns: list[float] | None,
+    us_returns: list[float] | None,
+) -> dict[str, Any]:
+    """손익 차트 — "전체"/"최근 15일"/"일일"(오늘 시간대별) 3개 기간을 모두 만든다.
+
+    daily_pnl/simulation_daily_pnl 테이블은 현재 어디서도 채워지지 않아(core/db/models.py의
+    두 모델을 찾아봐도 insert 지점이 없다) 실데이터 소스로 쓸 수 없다. 대신 매 루프 틱마다
+    이미 쌓이는 {live,simulation}_portfolio_snapshots에서 날짜/시간별 마지막 스냅샷 간
+    차액으로 손익(실현+평가)을 역산한다 — 새 트래킹을 추가하지 않고 이미 있는 데이터를 쓴다.
+    `daily_last`/`days_sorted`/`kr_returns`/`us_returns`는 호출자(`build_monitor_snapshot`)가
+    성과·리스크 지표와 공유하려고 미리 계산해 전달한다 — 중복 조회를 없앤다.
+    """
+    empty_period = {
+        "label": "전체",
+        "bars": [],
+        "xLabels": [],
+        "avgDailyReturnPct": 0.0,
+        "winRatePct": 0,
+        "benchmarkBars": [],
+    }
+
+    # "일일"(오늘 시간대별) 기간은 일별 히스토리 길이와 무관하게 오늘의 스냅샷만으로 계산한다
+    # — 운용 첫날이라 daily_last가 하루치뿐이어도 당일 흐름은 보여줄 수 있어야 한다.
+    hourly_last = _hourly_last_values_today(snapshots)
+    hours_sorted = sorted(hourly_last.keys())
+    if len(hours_sorted) >= 2:
+        hourly_values = [hourly_last[h] for h in hours_sorted]
+        hourly_period = await _build_chart_period(
+            "일일", hourly_values, hours_sorted, hourly=True,
+            kr_returns=None, us_returns=None, kr_weight=0.0, us_weight=0.0, base_krw=0,
+        )
+    else:
+        hourly_period = {**empty_period, "label": "일일"}
+
+    if len(days_sorted) < 2:
+        return {
+            "periods": [
+                {**empty_period, "label": "전체"},
+                {**empty_period, "label": "최근 15일"},
+                hourly_period,
+            ],
+            "totalUpKrw": 0,
+            "upDays": 0,
+            "totalDownKrw": 0,
+            "downDays": 0,
+            "netKrw": 0,
+        }
+
+    kr_value = sum(h["quantity"] * h["currentPrice"] for h in portfolio["holdings"] if h["market"] == "KR")
+    us_value = sum(h["quantity"] * h["currentPrice"] for h in portfolio["holdings"] if h["market"] == "US")
+    invested_total = (kr_value + us_value) or 1
+    kr_weight = kr_value / invested_total
+    us_weight = us_value / invested_total
+
+    full_days = days_sorted[-(_FULL_CHART_MAX_BARS + 1):]
+    full_values = [daily_last[d] for d in full_days]
+    full_period = await _build_chart_period(
+        "전체", full_values, full_days, hourly=False,
+        kr_returns=kr_returns, us_returns=us_returns, kr_weight=kr_weight, us_weight=us_weight,
+        base_krw=portfolio["totalValueKrw"],
+    )
+
+    recent_days = days_sorted[-(_RECENT_15D_BARS + 1):]
+    recent_values = [daily_last[d] for d in recent_days]
+    recent_period = await _build_chart_period(
+        "최근 15일", recent_values, recent_days, hourly=False,
+        kr_returns=kr_returns, us_returns=us_returns, kr_weight=kr_weight, us_weight=us_weight,
+        base_krw=portfolio["totalValueKrw"],
+    )
+
+    all_bars = _bars_from_values(full_values)
+    up = [b for b in all_bars if b > 0]
+    down = [b for b in all_bars if b < 0]
+
+    return {
+        "periods": [full_period, recent_period, hourly_period],
+        "totalUpKrw": sum(up),
+        "upDays": len(up),
+        "totalDownKrw": sum(down),
+        "downDays": len(down),
+        "netKrw": sum(up) + sum(down),
     }

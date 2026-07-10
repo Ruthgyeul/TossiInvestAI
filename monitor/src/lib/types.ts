@@ -14,24 +14,35 @@ export interface TotalAssetsSnapshot {
   realizedPnlTodayKrw: number;
   unrealizedPnlKrw: number;
   cumulativeReturnPct: number;
+  seedKrw: number;
   operatingDays: number;
   liveDays: number;
-  weeklyRebalanceDaysUntil: number;
-  lastReinvestmentKrw: number;
-  apiCallsToday: number;
   apiModel: string;
-  tokensInK: number;
-  tokensOutK: number;
+  apiCallsToday: number;
   apiCostTodayUsd: number;
   apiCostTodayKrw: number;
+  monthlyTokensInK: number;
+  monthlyTokensOutK: number;
+  apiCallsMonthly: number;
+  apiCostMonthlyUsd: number;
+  apiCostMonthlyKrw: number;
+}
+
+export interface ChartPeriod {
+  label: string;
+  /** Day-over-day (or hour-over-hour, for the "일일" period) KRW deltas, oldest first. */
+  bars: number[];
+  /** X-axis tick per bar — most are "", every ~3rd bar gets a date/hour label, last is "오늘"/"지금". */
+  xLabels: string[];
+  avgDailyReturnPct: number;
+  winRatePct: number;
+  /** Blended KR/US proxy-index KRW-equivalent deltas, same length as `bars` — empty when no proxy data exists. */
+  benchmarkBars: number[];
 }
 
 export interface PnlChartSnapshot {
-  periodLabel: string;
-  /** Normalized 0-100 daily values (50 = flat), oldest first — mirrors the bar-height formula from the source design. */
-  bars: number[];
-  avgDailyReturnPct: number;
-  winRatePct: number;
+  /** [전체, 최근 15일, 일일] — the dashboard rotates through these every 5s. */
+  periods: ChartPeriod[];
   totalUpKrw: number;
   upDays: number;
   totalDownKrw: number;
@@ -114,14 +125,21 @@ export interface HeaderSnapshot {
   promptVersion: string;
 }
 
+export type StatTone = "positive" | "negative" | "neutral" | "good" | "warn" | "bad";
+
+export interface Stat {
+  label: string;
+  value: string;
+  tone: StatTone;
+}
+
 export interface SubStripSnapshot {
   reportTime: string;
   reportSummary: string;
-  selfImprovementPendingCount: number;
-  selfImprovementVersion: string;
-  tossOverlapSymbols: string[];
-  tossOverlapHoldingCount: number;
-  tossOverlapTotalCount: number;
+  /** Rotating "성과" cards — alpha vs proxy index, win rate, fill rate, profit factor, Sharpe, win streak. */
+  perfStats: Stat[];
+  /** Rotating "리스크" cards — concentration, volatility, MDD, VaR. */
+  riskStats: Stat[];
   /** null when core has not run a trading loop tick yet (no state_snapshot to derive it from). */
   fearGreedIndex: number | null;
   fearGreedLabel: string;

@@ -1,4 +1,67 @@
-import type { MonitorSnapshot } from "./types";
+import type { ChartPeriod, MonitorSnapshot } from "./types";
+
+/** "D-14", "D-11", ... "오늘" (or "H-"/"지금" for the hourly period) — every 3rd bar, mirroring the source design's `offsetLabels`. */
+function offsetLabels(n: number, unit: string, nowLabel: string, spanUnits?: number): string[] {
+  const span = spanUnits ?? n - 1;
+  return Array.from({ length: n }, (_, i) => {
+    const offset = Math.round((span * (n - 1 - i)) / (n - 1));
+    return i === n - 1 ? nowLabel : i % 3 === 0 ? `${unit}-${offset}` : "";
+  });
+}
+
+const BAR_POOL = [
+  58, 62, 45, 70, 48, 30, 55, 80, 62, 40, 25, 65, 90, 50, 68, 35, 72, 58, 47, 63, 66, 44, 78, 53, 52,
+  61, 47, 58, 66, 40, 71, 55, 49, 63, 36, 68,
+];
+
+/** Converts the source design's 0-100 demo pool into plausible KRW day-over-day deltas. */
+function genBars(n: number, offset: number, krwPerUnit: number): number[] {
+  return Array.from({ length: n }, (_, i) => (BAR_POOL[(offset + i) % BAR_POOL.length] - 50) * krwPerUnit);
+}
+
+function genBenchmarkBars(bars: number[], ratio: number): number[] {
+  return bars.map((v) => Math.round(v * ratio));
+}
+
+function chartFooter(bars: number[]) {
+  const up = bars.filter((b) => b > 0);
+  const down = bars.filter((b) => b < 0);
+  const totalUpKrw = up.reduce((sum, b) => sum + b, 0);
+  const totalDownKrw = down.reduce((sum, b) => sum + b, 0);
+  return { totalUpKrw, upDays: up.length, totalDownKrw, downDays: down.length, netKrw: totalUpKrw + totalDownKrw };
+}
+
+const FULL_BARS = genBars(21, 0, 8000);
+const RECENT_BARS = genBars(15, 6, 9000);
+const HOURLY_BARS = genBars(24, 9, 2000);
+
+const CHART_PERIODS: ChartPeriod[] = [
+  {
+    label: "전체",
+    bars: FULL_BARS,
+    xLabels: offsetLabels(21, "D", "오늘", 60),
+    avgDailyReturnPct: 0.42,
+    winRatePct: 60,
+    benchmarkBars: genBenchmarkBars(FULL_BARS, 0.6),
+  },
+  {
+    label: "최근 15일",
+    bars: RECENT_BARS,
+    xLabels: offsetLabels(15, "D", "오늘", 15),
+    avgDailyReturnPct: 0.55,
+    winRatePct: 67,
+    benchmarkBars: genBenchmarkBars(RECENT_BARS, 0.6),
+  },
+  {
+    label: "일일",
+    bars: HOURLY_BARS,
+    xLabels: offsetLabels(24, "H", "지금", 24),
+    avgDailyReturnPct: 0.18,
+    winRatePct: 63,
+    // 실데이터에서도 관심 종목 일봉만 있고 시간별 지수 데이터는 없어 벤치마크 라인을 그리지 않는다.
+    benchmarkBars: [],
+  },
+];
 
 /**
  * Placeholder data shaped exactly like a future `GET /api/v1/monitor/snapshot`
@@ -19,11 +82,21 @@ export function getMockSnapshot(): MonitorSnapshot {
     subStrip: {
       reportTime: "09:00",
       reportSummary: "KR 강세 지속, 반도체 업황 개선 코멘트",
-      selfImprovementPendingCount: 1,
-      selfImprovementVersion: "v1.5",
-      tossOverlapSymbols: ["삼성전자", "NVDA", "AAPL"],
-      tossOverlapHoldingCount: 3,
-      tossOverlapTotalCount: 10,
+      perfStats: [
+        { label: "알파", value: "+2.1%p · KOSPI 대비", tone: "positive" },
+        { label: "알파", value: "+1.4%p · S&P500 대비", tone: "positive" },
+        { label: "승률", value: "60% · 최근 30건", tone: "neutral" },
+        { label: "체결률", value: "98% · 47/48건", tone: "neutral" },
+        { label: "손익비", value: "1.8 · 평균 수익/손실", tone: "positive" },
+        { label: "샤프지수", value: "1.42 · 최근 30일", tone: "neutral" },
+        { label: "연속수익", value: "5일 · 진행 중", tone: "positive" },
+      ],
+      riskStats: [
+        { label: "집중도", value: "정상 · NVDA 10.7%", tone: "good" },
+        { label: "변동성", value: "보통 · 최근 5일", tone: "warn" },
+        { label: "MDD", value: "-3.2% · 시드 대비", tone: "bad" },
+        { label: "VaR (95%)", value: "-₩842,000 · 1일 기준", tone: "bad" },
+      ],
       fearGreedIndex: 54,
       fearGreedLabel: "중립",
     },
@@ -39,30 +112,22 @@ export function getMockSnapshot(): MonitorSnapshot {
       realizedPnlTodayKrw: 312000,
       unrealizedPnlKrw: 530150,
       cumulativeReturnPct: 4.77,
+      seedKrw: 50000000,
       operatingDays: 58,
       liveDays: 44,
-      weeklyRebalanceDaysUntil: 3,
-      lastReinvestmentKrw: 186000,
-      apiCallsToday: 47,
       apiModel: "Sonnet",
-      tokensInK: 128.4,
-      tokensOutK: 22.1,
+      apiCallsToday: 47,
       apiCostTodayUsd: 4.82,
       apiCostTodayKrw: 6706,
+      monthlyTokensInK: 3012.4,
+      monthlyTokensOutK: 512.1,
+      apiCallsMonthly: 1410,
+      apiCostMonthlyUsd: 144.6,
+      apiCostMonthlyKrw: 201180,
     },
     chart: {
-      periodLabel: "전체",
-      bars: [
-        58, 62, 45, 70, 48, 30, 55, 80, 62, 40, 25, 65, 90, 50, 68, 35, 72, 58,
-        47, 63,
-      ],
-      avgDailyReturnPct: 0.42,
-      winRatePct: 60,
-      totalUpKrw: 2184600,
-      upDays: 12,
-      totalDownKrw: -716200,
-      downDays: 8,
-      netKrw: 1468400,
+      periods: CHART_PERIODS,
+      ...chartFooter(FULL_BARS),
     },
     systemHealth: {
       errorCountToday: 0,
@@ -72,10 +137,17 @@ export function getMockSnapshot(): MonitorSnapshot {
         { name: "discord-bot", status: "ok", detail: "14d 6h" },
         { name: "scheduler", status: "ok", detail: "14d 6h" },
         { name: "DB·Redis", status: "ok", detail: "정상" },
+        { name: "Toss API", status: "ok", detail: "정상" },
+        { name: "매매 판단 모델 API", status: "ok", detail: "정상" },
       ],
       logs: [
         { time: "14:32", level: "INFO", message: "하트비트 정상 · core" },
-        { time: "14:28", level: "INFO", message: "삼성전자 BUY 주문 체결" },
+        {
+          time: "14:28",
+          level: "INFO",
+          message:
+            "삼성전자 BUY 주문 체결 완료 — 체결가 78,400원, 수량 5주, 슬리피지 0.12%, 전략 시그널 신뢰도 82%, Safety Gate 통과, 포지션 비중 재계산 완료, 다음 리밸런싱까지 D-3",
+        },
         { time: "14:02", level: "WARN", message: "NVDA Safety Gate 거부" },
         { time: "11:47", level: "WARN", message: "TSLA Safety Gate 거부" },
         { time: "09:00", level: "INFO", message: "정기 리포트 생성 완료" },
@@ -95,12 +167,12 @@ export function getMockSnapshot(): MonitorSnapshot {
           { time: "09:20", message: "SOXL · 레버리지 ETF 거래제한" },
           { time: "어제 22:15", message: "TSLA · 변동성 급등 감지" },
           { time: "어제 16:40", message: "NAVER · 유동성 부족 경고" },
-          { time: "그제 19:30", message: "SOXL · 레버리지 ETF 거래제한" },
         ],
       },
       selfAssessment: {
         time: "어제 23:50",
-        summary: "KR 전략 안정적, NVDA 비중 확대 검토 제안. 변동성 구간은 보수적 진입 유효.",
+        summary:
+          "KR 전략 안정적, NVDA 비중 확대 검토 제안. 변동성 구간은 보수적 진입 유효하며 익절 라인은 기존 대비 2%p 상향 조정 권고, 당분간 현금 비중도 소폭 확대 유지 필요.",
       },
     },
     positions: [
@@ -133,9 +205,18 @@ export function getMockSnapshot(): MonitorSnapshot {
       },
     ],
     news: [
-      { sentiment: "호재", text: "삼성전자, 2분기 반도체 부문 흑자전환 전망" },
-      { sentiment: "주의", text: "Fed 위원 발언, 9월 금리 인하 기대 후퇴" },
-      { sentiment: "호재", text: "NVDA, 데이터센터向 신규 수주 발표" },
+      {
+        sentiment: "호재",
+        text: "삼성전자, 2분기 반도체 부문 흑자전환 전망 발표 이후 외국인 수급 유입세 지속되며 목표가 상향 리포트 잇따라 발간",
+      },
+      {
+        sentiment: "주의",
+        text: "Fed 위원 발언, 9월 금리 인하 기대 후퇴하며 채권시장 변동성 확대, 달러 강세 전환 우려도 동시에 제기되는 상황",
+      },
+      {
+        sentiment: "호재",
+        text: "NVDA, 데이터센터向 신규 수주 발표와 함께 차세대 GPU 양산 일정 공개, 협력사 실적 전망치도 동반 상향",
+      },
     ],
     events: [
       { label: "7/10 (금) FOMC 의사록 공개", risk: "고위험" },

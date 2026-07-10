@@ -67,31 +67,41 @@ export function TotalAssetsCard({ data }: { data: TotalAssetsSnapshot }) {
           </span>
         </div>
         <div className={styles.row}>
+          <span className={styles.rowLabelMuted}>시드 금액</span>
+          <span className={styles.rowValue}>{formatKrw(data.seedKrw)}</span>
+        </div>
+        <div className={styles.row}>
           <span className={styles.rowLabelMuted}>운용 일수</span>
           <span className={styles.rowValue}>
             D+{data.operatingDays} (LIVE {data.liveDays}일)
-          </span>
-        </div>
-        <div className={styles.row}>
-          <span className={styles.rowLabelMuted}>주간 재배분</span>
-          <span className={styles.rowValue}>
-            D-{data.weeklyRebalanceDaysUntil} · 직전 재투자 {formatKrw(data.lastReinvestmentKrw)}
           </span>
         </div>
       </div>
 
       <div className={styles.apiBlock}>
         <div className={styles.row}>
-          <span className={styles.rowLabelMuted}>API 호출 · 모델</span>
+          <span className={styles.rowLabelMuted}>매매 판단 모델</span>
+          <span className={styles.rowValue}>{data.apiModel}</span>
+        </div>
+        <div className={styles.row}>
+          <span className={styles.rowLabelMuted}>이번달 토큰 (in/out)</span>
           <span className={styles.rowValue}>
-            {data.apiCallsToday}회 · {data.apiModel}
+            {data.monthlyTokensInK.toFixed(1)}k/{data.monthlyTokensOutK.toFixed(1)}k
           </span>
         </div>
         <div className={styles.row}>
-          <span className={styles.rowLabelMuted}>토큰 (in/out)</span>
-          <span className={styles.rowValue}>
-            {data.tokensInK.toFixed(1)}k/{data.tokensOutK.toFixed(1)}k
+          <span className={styles.rowLabelMuted}>API 호출 (월간)</span>
+          <span className={styles.rowValue}>{data.apiCallsMonthly.toLocaleString("ko-KR")}회</span>
+        </div>
+        <div className={styles.row}>
+          <span className={styles.rowLabelMuted}>API 비용 (월간)</span>
+          <span className={styles.rowValue} style={{ fontWeight: 700 }}>
+            ${data.apiCostMonthlyUsd.toFixed(2)} · {formatKrw(data.apiCostMonthlyKrw)}
           </span>
+        </div>
+        <div className={styles.row}>
+          <span className={styles.rowLabelMuted}>API 호출 (금일)</span>
+          <span className={styles.rowValue}>{data.apiCallsToday}회</span>
         </div>
         <div className={styles.row}>
           <span className={styles.rowLabelMuted}>API 비용 (금일)</span>

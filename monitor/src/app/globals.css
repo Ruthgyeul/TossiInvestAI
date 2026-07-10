@@ -40,8 +40,10 @@
   /* green — healthy / info log level / positive news */
   --green-65: oklch(65% 0.16 150);
   --green-bg: oklch(24% 0.03 150);
+  /* risk stat "good" tone (집중도 정상 등) — distinct L/C from --green-65 in the source design */
+  --risk-good: oklch(70% 0.15 150);
 
-  /* amber — pending approval / warn log level */
+  /* amber — pending approval / warn log level / risk "warn" tone */
   --amber-text: oklch(78% 0.14 85);
   --amber-bg: oklch(26% 0.05 85);
   --amber-warn-text: oklch(70% 0.15 85);
@@ -71,4 +73,22 @@ body {
   font-family: var(--font-sans);
   color: var(--text-primary);
   background: var(--bg-page);
+}
+
+/* Report/event/self-assessment marquee loop — source design's bin-report-marquee(-y). */
+@keyframes bin-marquee-x {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes bin-marquee-y {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
 }
