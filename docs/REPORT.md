@@ -36,6 +36,9 @@
 ### 1. 오늘 시장 요약
 - 전반적인 시장 분위기 (강세 / 약세 / 혼조)
 - 주요 이슈 및 이벤트
+- **시장 경제 뉴스** — 한국경제·매일경제·서울경제·머니투데이 RSS 헤드라인 상위
+  4건(`core/market_data/news.py:fetch_market_news`). KR 리포트에만 실린다(US는
+  종목별 Yahoo Finance 피드로 대체 — 시장 전반 피드 미보유).
 
 ### 2. 지수 현황
 
@@ -72,7 +75,8 @@ JPY 등 다른 통화쌍 엔드포인트가 없어 표기하지 않는다.
 각 보유 종목에 대해:
 - 현재가, 평균단가, 수익률
 - 오늘 등락
-- 종목별 최신 뉴스 요약
+- 종목별 최신 뉴스 요약 — `collector`가 스냅샷에 채워 둔 `news_summary`(Gemini 요약)를
+  그대로 싣는다. 별도 AI 호출 없음. `"뉴스 없음"` 폴백은 노출하지 않는다.
 
 ### 10. 기술적 분석
 보유 종목 및 관심 종목 기준:
@@ -123,6 +127,49 @@ JPY 등 다른 통화쌍 엔드포인트가 없어 표기하지 않는다.
 | 누적 수익률 | 시드 대비 누적 수익 라인차트 (위와 동일 조건) |
 
 그래프 생성 실패 시 텍스트 리포트만 발송하고 `#stock-error`에 경고 Embed 전송.
+
+---
+
+## 확장 지표 (`core/report/extras.py`)
+
+14개 필수 항목 외에, 리포트 하단(마크다운 "15. 리스크·성과 확장 지표" / HTML "03. 리스크·성과
+확장 지표")에 아래 9종을 싣는다. 전부 기존 코어 데이터로 계산하며, 개별 항목은 소스 장애·미연동
+시 조용히 생략된다(그래프·본문과 동일한 graceful degradation). Claude 추가 호출은 없다.
+
+| 지표 | 내용 | 데이터 소스 |
+|------|------|-------------|
+| 미실현 손익 | 보유 종목 평가손익 합계(₩)·원가 대비 % (US는 환율 환산) | `fund_manager` 포트폴리오 |
+| Safety Gate 소진율 | 일일 손실 한도 소진율, 종목당 비중/상한, VI·거래정지, 긴급정지 플래그 | `db.get_today_realized_pnl_krw`·`fund_manager.get_position_ratio`·스냅샷 `vi_triggered`·`db.get_control_flags` |
+| AI 결정 요약 | 오늘 BUY/HOLD/SELL 건수, 최신 결정, API 호출·비용 | `decisions` 테이블 + `db.get_api_usage_*_summary` |
+| 참고 손절/익절 라인 | 평균단가 ±설정%로 역산한 참고 기준선 (실제 청산은 전략이 결정) | `settings.REPORT_STOP_LOSS_PCT`·`REPORT_TAKE_PROFIT_PCT` |
+| 캘린더·세션 | 시장별 개장/정규장 여부 | `toss_market.is_market_open`·`is_regular_session` (하드코딩 금지, 절대 규칙 4) |
+| 초과수익 α | 포트폴리오 기간 수익률 − 관심 종목 지수(대체) 기간 수익률 | 포트폴리오 스냅샷 + `_market_composite_series` |
+| 변동성 %B | 볼린저밴드 내 위치·밴드폭 | 스냅샷 `bb_upper`/`bb_lower` |
+| 환율 민감도 | USD/KRW, US 노출 원화액, 환율 1% 변동 민감도(₩) | 스냅샷 환율 + US 보유 |
+| 체결 타임라인 | 오늘 체결을 시간순으로(종목·수량·가격·손익) | `db.get_today_trades` |
+
+`REPORT_STOP_LOSS_PCT`(기본 0.08) / `REPORT_TAKE_PROFIT_PCT`(기본 0.15)는 `.env`로 조정한다.
+마크다운은 compact 요약, HTML 문서는 카드·미터·테이블로 상세 표시한다.
+
+---
+
+## HTML 리포트 문서 (`core/report/html.py`)
+
+정기·즉시·주간 리포트는 마크다운(Discord Embed용)과 **자기완결 HTML 문서**를 함께
+생성한다. HTML은 대시보드 형태로, 위 그래프 PNG를 **base64 data URI로 인라인**하므로
+외부 의존 없이 한 파일로 브라우저·디스코드 어디서든 그대로 열린다.
+
+| 항목 | 내용 |
+|------|------|
+| 저장 위치 | `logs/reports/report_{market}_{날짜_시각}.html` (마크다운 `.md`와 같은 경로) |
+| 구성 | KPI 요약(총자산·누적 수익률·현금 버퍼·보유 종목) → 시장별 현황(공포탐욕 미터·인기/급증 칩·RSI/신호/AI 표·**시장 경제 뉴스**) → 보유 종목 분석(**종목별 뉴스** 포함) → 그래프 → 주의 노트 |
+| 주간 리포트 | 성과 지표 그리드 + 자금 정산 + 다음 주 방향 (`render_weekly_report`) |
+| 테마 | 라이트/다크 자동 대응 (`prefers-color-scheme` + 뷰어 토글) |
+| 전달 | `report_ready` 이벤트의 `htmlPath`로 실려 discord-bot이 `#stock-analyze`에 파일 첨부 (docs/INTERNAL_API.md) |
+| 역할 분리 | 신호·추천·뉴스 판정은 `generator`, 표현(마크업·스타일)은 `html.py` — `html.py`는 `generator`를 import하지 않는다(순환 방지) |
+
+마크다운·HTML·차트는 시장별 스냅샷을 **한 번만** 수집해 공유한다
+(`generator._resolve_report_inputs`). HTML 생성 실패는 마크다운 발송을 막지 않는다.
 
 ---
 

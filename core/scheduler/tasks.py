@@ -4,17 +4,14 @@
 스케줄을 따른다.
 """
 
-from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from core.config import settings
 from core.db.backup import run_daily_backup, run_monthly_backup, run_weekly_backup
-from core.events.publisher import publish_event
 from core.monitoring.health import run_health_check
-from core.report.generator import generate_and_publish, generate_weekly_report
+from core.report.generator import generate_and_publish, generate_weekly_and_publish
 from core.trading.reflection import run_reflection
 
 scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
@@ -29,23 +26,6 @@ _REPORT_SCHEDULE: list[tuple[str, str, str, str]] = [
     ("02:00", "US", "midday", "report_us_midday"),
     ("06:05", "US", "close", "report_us_close"),
 ]
-
-
-async def _run_weekly_report() -> None:
-    content_md = await generate_weekly_report()
-    await publish_event(
-        "report_ready",
-        mode=settings.run_mode,
-        market=None,
-        payload={
-            "title": "[빈] 주간 성과 리포트",
-            "market": "ALL",
-            "reportType": "weekly",
-            "contentMd": content_md[:3800],
-            "chartPaths": [],
-            "generatedAt": datetime.now(_KST).isoformat(),
-        },
-    )
 
 
 def register_all_jobs() -> None:
@@ -66,7 +46,7 @@ def register_all_jobs() -> None:
         )
 
     scheduler.add_job(
-        _run_weekly_report,
+        generate_weekly_and_publish,
         CronTrigger(day_of_week="mon", hour=8, minute=0, timezone=_KST),
         id="weekly_report",
         replace_existing=True,

@@ -353,6 +353,10 @@ async def post_report_generate(request: web.Request) -> web.Response:
     """POST /api/v1/reports/generate {market?} -> 202 {jobId} (완료 시 report_ready pub/sub 이벤트)"""
     body = await request.json() if request.can_read_body else {}
     market = body.get("market", "ALL")
+    # market은 사용자 입력이므로 알려진 값만 허용한다 — 리포트 파일 경로에 쓰이기 때문에
+    # (core/report/generator.py) 경로 조작을 원천 차단한다.
+    if market not in ("KR", "US", "ALL"):
+        return _json({"error": "market must be one of KR, US, ALL"}, status=400)
     job_id = str(uuid.uuid4())
 
     asyncio.create_task(generate_and_publish(market, "on_demand", correlation_id=job_id))
