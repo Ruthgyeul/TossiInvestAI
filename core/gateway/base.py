@@ -16,6 +16,17 @@ from core.models import Decision, StateSnapshot
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "trading" / "prompts"
 _JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
 
+# prompt_version은 DB(strategy_versions.prompt_version)를 거쳐 파일명으로 쓰인다 —
+# 경로 구분자·".." 등이 섞이면 prompts/ 밖의 파일을 읽게 되므로 형식을 강제한다.
+_PROMPT_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9_\-]+$")
+
+# KR 종목코드(숫자 6자리)·US 티커(BRK.B, BF-B 등)를 모두 포괄하는 보수적 형식.
+_SYMBOL_PATTERN = re.compile(r"^[A-Za-z0-9.\-]{1,12}$")
+
+_VALID_ACTIONS = {"BUY", "SELL", "HOLD"}
+_VALID_ORDER_TYPES = {"LIMIT", "MARKET"}
+_VALID_RISK_LEVELS = {"LOW", "MEDIUM", "HIGH"}
+
 
 class AIGateway(ABC):
     @abstractmethod
@@ -33,6 +44,8 @@ def load_system_prompt(prompt_version: str) -> str:
     버전이 드러나야 하며, `strategy_versions.prompt_version`에 저장된 값을 그대로 파일명으로
     사용해 별도 마이그레이션 없이 배포된 버전의 파일을 로드한다.
     """
+    if not _PROMPT_VERSION_PATTERN.fullmatch(prompt_version):
+        raise ValueError(f"잘못된 prompt_version 형식: {prompt_version!r}")
     return (_PROMPTS_DIR / f"{prompt_version}.md").read_text(encoding="utf-8")
 
 
@@ -96,21 +109,55 @@ def build_portfolio_block(state: StateSnapshot) -> str:
 
 
 def parse_decision_json(text: str) -> Decision:
-    """system_kr.md/system_us.md 출력 JSON 스펙 → Decision. Claude·DeepSeek 공용."""
+    """system_kr.md/system_us.md 출력 JSON 스펙 → Decision. Claude·DeepSeek 공용.
+
+    Decision은 dataclass라 Literal 타입이 런타임에 강제되지 않는다 — 모델 출력은
+    외부 데이터(뉴스 헤드라인 등)의 영향을 받는 신뢰할 수 없는 입력이므로, 여기서
+    스펙을 벗어난 값을 전부 거부해 Safety Gate·토스 API로 흘러가지 않게 한다.
+    """
     match = _JSON_BLOCK.search(text)
     if match is None:
         raise ValueError(f"모델 응답에서 JSON을 찾을 수 없음: {text!r}")
 
     data = json.loads(match.group(0))
+
+    action = data["action"]
+    if action not in _VALID_ACTIONS:
+        raise ValueError(f"잘못된 action: {action!r}")
+
+    symbol = data["symbol"]
+    if not isinstance(symbol, str) or not _SYMBOL_PATTERN.fullmatch(symbol):
+        raise ValueError(f"잘못된 symbol 형식: {symbol!r}")
+
+    order_type = data["order_type"]
+    if order_type not in _VALID_ORDER_TYPES:
+        raise ValueError(f"잘못된 order_type: {order_type!r}")
+
+    risk_level = data["risk_level"]
+    if risk_level not in _VALID_RISK_LEVELS:
+        raise ValueError(f"잘못된 risk_level: {risk_level!r}")
+
+    quantity = int(data["quantity"])
+    if action != "HOLD" and quantity <= 0:
+        raise ValueError(f"BUY/SELL 수량은 1 이상이어야 함: {quantity}")
+
+    confidence = float(data["confidence"])
+    if not 0.0 <= confidence <= 1.0:
+        raise ValueError(f"confidence는 0~1 범위여야 함: {confidence}")
+
     price = data.get("price")
+    price = float(price) if price else None
+    if price is not None and price <= 0:
+        raise ValueError(f"price는 0보다 커야 함: {price}")
+
     return Decision(
         decision_id=str(uuid.uuid4()),
-        action=data["action"],
-        symbol=data["symbol"],
-        quantity=int(data["quantity"]),
-        order_type=data["order_type"],
-        price=float(price) if price else None,
-        confidence=float(data["confidence"]),
-        reason=data["reason"],
-        risk_level=data["risk_level"],
+        action=action,
+        symbol=symbol,
+        quantity=quantity,
+        order_type=order_type,
+        price=price,
+        confidence=confidence,
+        reason=str(data["reason"]),
+        risk_level=risk_level,
     )

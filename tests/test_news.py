@@ -37,6 +37,25 @@ def test_parse_rss_titles_returns_empty_on_malformed_xml() -> None:
     assert news._parse_rss_titles("not xml", limit=5) == []
 
 
+def test_feed_url_encodes_symbol_against_query_injection() -> None:
+    url = news._feed_url("AAPL&hl=en&extra=1")
+    assert "&extra=1" not in url
+    assert "AAPL%26hl%3Den%26extra%3D1" in url
+
+
+def test_parse_rss_titles_blocks_entity_expansion_attack() -> None:
+    """defusedxml — billion laughs 류 엔티티 확장 XML은 파싱을 거부하고 빈 목록을 반환한다."""
+    bomb = """<?xml version="1.0"?>
+<!DOCTYPE lolz [
+  <!ENTITY lol "lol">
+  <!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">
+  <!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">
+]>
+<rss version="2.0"><channel><item><title>&lol3;</title></item></channel></rss>
+"""
+    assert news._parse_rss_titles(bomb, limit=5) == []
+
+
 @pytest.mark.asyncio
 async def test_fetch_news_parses_feed_and_caches(fake_redis) -> None:  # noqa: ANN001
     with aioresponses() as mocked:

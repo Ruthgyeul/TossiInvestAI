@@ -39,15 +39,48 @@ async def rule_based_filter(state: StateSnapshot) -> Decision | None:
     return None
 
 
+def _constrain_to_known_symbols(decision: Decision, state: StateSnapshot) -> Decision:
+    """AI 결정의 종목을 이번 루프에서 실제로 분석한 종목(state.prices)·보유 종목으로 제한한다.
+
+    모델 입력에는 외부에서 조작 가능한 데이터(뉴스 헤드라인 등)가 섞이므로, 프롬프트 주입으로
+    모델이 임의의 종목 매매를 지시하더라도 여기서 HOLD로 강등해 주문이 나가지 않게 한다.
+    Discord `/buy`·`/sell` 수동 주문은 이 함수를 거치지 않으므로 영향이 없다.
+    """
+    if decision.action == "HOLD":
+        return decision
+
+    held_symbols = {h.get("symbol") for h in state.portfolio.get("holdings", [])}
+    if decision.symbol in state.prices or decision.symbol in held_symbols:
+        return decision
+
+    log.warning(
+        "decision_symbol_not_in_state",
+        symbol=decision.symbol,
+        action=decision.action,
+        market=state.market,
+    )
+    return Decision(
+        decision_id=decision.decision_id,
+        action="HOLD",
+        symbol=decision.symbol,
+        quantity=0,
+        order_type="MARKET",
+        price=None,
+        confidence=decision.confidence,
+        reason=f"분석 대상이 아닌 종목({decision.symbol}) 결정 차단 — HOLD로 대체",
+        risk_level="HIGH",
+    )
+
+
 async def get_decision(state: StateSnapshot) -> Decision:
     """1. 규칙 기반 필터 → 2. Claude 직접 호출 → 3. 실패 시 DeepSeek 폴백."""
     if signal := await rule_based_filter(state):
         return signal
 
     try:
-        return await claude_gateway.decide(state)
+        return _constrain_to_known_symbols(await claude_gateway.decide(state), state)
     except (anthropic.APIStatusError, anthropic.APITimeoutError) as e:
         log.error("claude_failed", error=str(e))
 
     log.warning("fallback_to_deepseek")
-    return await deepseek_gateway.decide(state)
+    return _constrain_to_known_symbols(await deepseek_gateway.decide(state), state)

@@ -87,3 +87,68 @@ async def test_claude_failure_falls_back_to_deepseek(
     result = await decision_module.get_decision(state)
 
     assert result is fallback_decision
+
+
+@pytest.mark.asyncio
+async def test_ai_decision_for_unknown_symbol_is_demoted_to_hold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """프롬프트 주입 등으로 모델이 분석 대상이 아닌 종목을 지시하면 HOLD로 강등한다."""
+    rogue_decision = models.Decision(
+        decision_id="rogue-id",
+        action="BUY",
+        symbol="999999",  # watchlist·보유 종목 어디에도 없는 종목
+        quantity=1,
+        order_type="MARKET",
+        price=None,
+        confidence=0.9,
+        reason="주입된 지시",
+        risk_level="LOW",
+    )
+
+    async def _claude_decides(state: models.StateSnapshot) -> models.Decision:
+        return rogue_decision
+
+    monkeypatch.setattr(claude_gateway, "decide", _claude_decides)
+
+    state = _make_state(
+        prices={"005930": {"price": 75_000, "rsi_14": 50.0}},
+        holdings=[{"symbol": "005930", "quantity": 2, "avg_price": 70_000}],
+    )
+
+    result = await decision_module.get_decision(state)
+
+    assert result.action == "HOLD"
+    assert result.quantity == 0
+
+
+@pytest.mark.asyncio
+async def test_ai_sell_decision_for_held_symbol_passes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """보유 중인 종목은 watchlist(prices)에 없어도 매도 결정을 허용한다."""
+    sell_decision = models.Decision(
+        decision_id="sell-id",
+        action="SELL",
+        symbol="035720",
+        quantity=1,
+        order_type="MARKET",
+        price=None,
+        confidence=0.8,
+        reason="보유 종목 정리",
+        risk_level="MEDIUM",
+    )
+
+    async def _claude_decides(state: models.StateSnapshot) -> models.Decision:
+        return sell_decision
+
+    monkeypatch.setattr(claude_gateway, "decide", _claude_decides)
+
+    state = _make_state(
+        prices={"005930": {"price": 75_000, "rsi_14": 50.0}},
+        holdings=[{"symbol": "035720", "quantity": 1, "avg_price": 40_000}],
+    )
+
+    result = await decision_module.get_decision(state)
+
+    assert result is sell_decision

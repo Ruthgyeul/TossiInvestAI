@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -45,6 +46,11 @@ def _current_mode() -> Mode:
 def _infer_market(symbol: str) -> Market:
     """숫자 종목코드는 KR, 알파벳 티커는 US (docs/INTERNAL_API.md 참고)."""
     return "KR" if symbol.isdigit() else "US"
+
+
+# KR 종목코드(숫자 6자리)·US 티커(BRK.B, BF-B 등)를 포괄하는 보수적 형식 —
+# core/gateway/base.py의 AI 결정 symbol 검증과 동일한 기준을 수동 주문에도 적용한다.
+_SYMBOL_PATTERN = re.compile(r"^[A-Za-z0-9.\-]{1,12}$")
 
 
 async def get_status(request: web.Request) -> web.Response:
@@ -99,6 +105,8 @@ async def _place_manual_order(request: web.Request, action: str) -> web.Response
         return _json({"approved": False, "reason": "수량은 1 이상이어야 합니다"}, status=400)
     if price is not None and price <= 0:
         return _json({"approved": False, "reason": "가격은 0보다 커야 합니다"}, status=400)
+    if not _SYMBOL_PATTERN.fullmatch(symbol):
+        return _json({"approved": False, "reason": "잘못된 종목 코드 형식"}, status=400)
 
     market = _infer_market(symbol)
 
