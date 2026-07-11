@@ -507,6 +507,16 @@ async def test_generate_weekly_report_flags_no_sells_for_review(
     assert "이번 주 체결된 매도가 없어" in content
 
 
+def test_safe_market_label_rejects_path_traversal() -> None:
+    """market은 사용자 입력이므로 파일 경로 라벨은 화이트리스트 리터럴로만 나와야 한다."""
+    assert generator_module._safe_market_label("KR") == "kr"
+    assert generator_module._safe_market_label("ALL") == "all"
+    assert generator_module._safe_market_label("weekly") == "weekly"
+    # 경로 조작 시도는 안전한 상수로 대체된다 — 파일명에 구분자/상위 경로가 새지 않는다.
+    assert generator_module._safe_market_label("../../etc/passwd") == "unknown"
+    assert "/" not in generator_module._report_html_filename("../../etc/passwd").name
+
+
 @pytest.mark.asyncio
 async def test_generate_report_includes_holdings_news(
     monkeypatch: pytest.MonkeyPatch,

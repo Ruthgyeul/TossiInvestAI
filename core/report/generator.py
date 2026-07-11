@@ -474,16 +474,26 @@ async def _market_composite_series(market: Market) -> list[float] | None:
     return [sum(day_values) / len(day_values) for day_values in zip(*trimmed)]
 
 
+# 파일명에 쓰는 시장 라벨을 상수 화이트리스트로 고정한다 — market은 `/report` API body에서
+# 오는 사용자 입력이므로(core/api/routes.py) 경로 조작(path traversal)을 막기 위해 알려진
+# 값만 리터럴로 매핑하고, 그 외에는 "unknown"으로 대체한다.
+_SAFE_MARKET_LABELS: dict[str, str] = {"KR": "kr", "US": "us", "ALL": "all", "WEEKLY": "weekly"}
+
+
+def _safe_market_label(market: str) -> str:
+    return _SAFE_MARKET_LABELS.get(str(market).upper(), "unknown")
+
+
 def _report_filename(market: str) -> Path:
     now = datetime.now(_KST)
     _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    return _REPORTS_DIR / f"report_{market.lower()}_{now:%Y-%m-%d_%H%M}.md"
+    return _REPORTS_DIR / f"report_{_safe_market_label(market)}_{now:%Y-%m-%d_%H%M}.md"
 
 
 def _report_html_filename(market: str) -> Path:
     now = datetime.now(_KST)
     _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    return _REPORTS_DIR / f"report_{market.lower()}_{now:%Y-%m-%d_%H%M}.html"
+    return _REPORTS_DIR / f"report_{_safe_market_label(market)}_{now:%Y-%m-%d_%H%M}.html"
 
 
 def _one_line_summary(market: str, portfolio: dict) -> str:
