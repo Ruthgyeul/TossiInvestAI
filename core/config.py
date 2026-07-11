@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     KR_STOP: bool = False
     US_STOP: bool = False
 
+    # 리포트 참고 손절/익절 라인 — 실제 청산은 전략이 결정하며, 리포트에 표시하는 참고
+    # 기준선일 뿐이다(docs/REPORT.md "확장 지표"). .env로 조정 가능.
+    REPORT_STOP_LOSS_PCT: float = 0.08
+    REPORT_TAKE_PROFIT_PCT: float = 0.15
+
     # 운영 모드
     DRY_RUN: bool = False        # true: 개발용 최소 테스트
     SIMULATION: bool = True      # true: 실전 동일 리허설 (주문만 가상)

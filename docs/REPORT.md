@@ -130,6 +130,29 @@ JPY 등 다른 통화쌍 엔드포인트가 없어 표기하지 않는다.
 
 ---
 
+## 확장 지표 (`core/report/extras.py`)
+
+14개 필수 항목 외에, 리포트 하단(마크다운 "15. 리스크·성과 확장 지표" / HTML "03. 리스크·성과
+확장 지표")에 아래 9종을 싣는다. 전부 기존 코어 데이터로 계산하며, 개별 항목은 소스 장애·미연동
+시 조용히 생략된다(그래프·본문과 동일한 graceful degradation). Claude 추가 호출은 없다.
+
+| 지표 | 내용 | 데이터 소스 |
+|------|------|-------------|
+| 미실현 손익 | 보유 종목 평가손익 합계(₩)·원가 대비 % (US는 환율 환산) | `fund_manager` 포트폴리오 |
+| Safety Gate 소진율 | 일일 손실 한도 소진율, 종목당 비중/상한, VI·거래정지, 긴급정지 플래그 | `db.get_today_realized_pnl_krw`·`fund_manager.get_position_ratio`·스냅샷 `vi_triggered`·`db.get_control_flags` |
+| AI 결정 요약 | 오늘 BUY/HOLD/SELL 건수, 최신 결정, API 호출·비용 | `decisions` 테이블 + `db.get_api_usage_*_summary` |
+| 참고 손절/익절 라인 | 평균단가 ±설정%로 역산한 참고 기준선 (실제 청산은 전략이 결정) | `settings.REPORT_STOP_LOSS_PCT`·`REPORT_TAKE_PROFIT_PCT` |
+| 캘린더·세션 | 시장별 개장/정규장 여부 | `toss_market.is_market_open`·`is_regular_session` (하드코딩 금지, 절대 규칙 4) |
+| 초과수익 α | 포트폴리오 기간 수익률 − 관심 종목 지수(대체) 기간 수익률 | 포트폴리오 스냅샷 + `_market_composite_series` |
+| 변동성 %B | 볼린저밴드 내 위치·밴드폭 | 스냅샷 `bb_upper`/`bb_lower` |
+| 환율 민감도 | USD/KRW, US 노출 원화액, 환율 1% 변동 민감도(₩) | 스냅샷 환율 + US 보유 |
+| 체결 타임라인 | 오늘 체결을 시간순으로(종목·수량·가격·손익) | `db.get_today_trades` |
+
+`REPORT_STOP_LOSS_PCT`(기본 0.08) / `REPORT_TAKE_PROFIT_PCT`(기본 0.15)는 `.env`로 조정한다.
+마크다운은 compact 요약, HTML 문서는 카드·미터·테이블로 상세 표시한다.
+
+---
+
 ## HTML 리포트 문서 (`core/report/html.py`)
 
 정기·즉시·주간 리포트는 마크다운(Discord Embed용)과 **자기완결 HTML 문서**를 함께

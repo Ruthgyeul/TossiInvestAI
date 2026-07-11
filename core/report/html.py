@@ -11,10 +11,13 @@ from datetime import datetime
 from html import escape
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import structlog
 
 log = structlog.get_logger(__name__)
+
+_KST = ZoneInfo("Asia/Seoul")
 
 # generator가 판정한 신호·추천 텍스트 → CSS 클래스 (표현만 담당).
 _SIGNAL_CLASS = {"과매수": "over", "과매도": "under", "중립": "mid", "데이터 없음": "mid"}
@@ -98,6 +101,19 @@ table.tbl tr:last-child td{border-bottom:none}
 .card .pad{padding:6px 20px 8px}
 .scroll{overflow-x:auto}
 .weekly{display:grid;grid-template-columns:1.4fr 1fr;gap:18px}
+.exgrid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px}
+.gate{display:flex;flex-direction:column;gap:12px}
+.gate .cap{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink-2)}
+.flagrow{display:flex;gap:6px;flex-wrap:wrap}
+.flag-pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;background:var(--panel-2);border:1px solid var(--line);color:var(--ink-2)}
+.flag-pill.on{background:color-mix(in srgb,var(--loss) 16%,transparent);color:var(--loss);border-color:transparent}
+.tl{display:flex;flex-direction:column;gap:0}
+.tl .ev{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+.tl .ev:last-child{border-bottom:none}
+.tl .ev .tm{font-family:var(--mono);color:var(--ink-3);font-size:11.5px;min-width:42px}
+.tl .ev .act{font-weight:700;font-size:11px;padding:1px 7px;border-radius:5px}
+.tl .ev .act.buy{background:var(--teal-soft);color:var(--teal)}
+.tl .ev .act.sell{background:color-mix(in srgb,var(--loss) 16%,transparent);color:var(--loss)}
 .metric-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-radius:12px;overflow:hidden;border:1px solid var(--line)}
 .metric{background:var(--panel);padding:14px 16px}
 .metric .m-l{font-size:12px;color:var(--ink-2);font-weight:600}
@@ -301,6 +317,159 @@ def _charts_grid(chart_paths: list[str]) -> str:
     return _sec("", "그래프", ' <span style="font-weight:500;color:var(--ink-3);font-size:14px">· core/report/chart.py</span>') + f'<div class="charts">{"".join(figs)}</div>'
 
 
+def _extras_kpis(extras: dict[str, Any]) -> str:
+    un = extras.get("unrealized") or {}
+    alpha = extras.get("alpha")
+    fx = extras.get("fx")
+    ai = extras.get("ai") or {}
+    counts = ai.get("today_counts", {})
+
+    total = un.get("total_krw", 0)
+    un_cls = "up" if total >= 0 else "down"
+    alpha_html = (
+        f'<div class="val {"up" if alpha["alpha_pp"] >= 0 else "down"}">{alpha["alpha_pp"] * 100:+.1f}<small> %p</small></div>'
+        f'<div class="sub">포트 {alpha["portfolio_pct"] * 100:+.1f}% · 벤치 {alpha["benchmark_pct"] * 100:+.1f}%</div>'
+        if alpha
+        else '<div class="val" style="font-size:15px;color:var(--ink-3)">데이터 부족</div><div class="sub">스냅샷 2개 이상 필요</div>'
+    )
+    fx_html = (
+        f'<div class="val">{fx["sensitivity_1pct_krw"]:+,}<small> ₩</small></div>'
+        f'<div class="sub">US 노출 {fx["us_exposure_krw"]:,} ₩ · 환율 {fx["usd_krw"]:,.1f}</div>'
+        if fx
+        else '<div class="val" style="font-size:15px;color:var(--ink-3)">데이터 없음</div><div class="sub">환율 미연동</div>'
+    )
+    return (
+        '<div class="kpis">'
+        f'<div class="kpi"><div class="label">미실현 손익</div><div class="val {un_cls}">{total:+,}<small> ₩</small></div>'
+        f'<div class="sub {un_cls}">원가 대비 {un.get("total_pct", 0) * 100:+.1f}%</div></div>'
+        f'<div class="kpi"><div class="label">초과수익 α (기간)</div>{alpha_html}</div>'
+        f'<div class="kpi"><div class="label">환율 1% 민감도</div>{fx_html}</div>'
+        f'<div class="kpi"><div class="label">AI 결정 (오늘)</div>'
+        f'<div class="val" style="font-size:18px">B {counts.get("BUY", 0)} · H {counts.get("HOLD", 0)} · S {counts.get("SELL", 0)}</div>'
+        f'<div class="sub">API {ai.get("api_calls_today", 0)}회 · 이번달 {ai.get("api_cost_month_krw", 0):,} ₩</div></div>'
+        "</div>"
+    )
+
+
+def _gate_card(extras: dict[str, Any]) -> str:
+    safety = extras.get("safety") or {}
+    usage = safety.get("daily_usage", 0.0)
+    usage_pct = min(100, max(0, usage * 100))
+    positions = safety.get("positions", [])
+    cap = safety.get("cap", 0.5)
+    pos_rows = "".join(
+        f'<div class="cap"><span>{escape(p["symbol"])}</span>'
+        f'<span class="num" style="color:{"var(--loss)" if (p.get("ratio") or 0) > cap else "var(--ink)"}">'
+        f'{(p["ratio"] * 100):.1f}% / {cap * 100:.0f}%</span></div>'
+        for p in positions
+        if p.get("ratio") is not None
+    ) or '<div class="cap"><span style="color:var(--ink-3)">보유 종목 없음</span><span></span></div>'
+
+    restricted = safety.get("restricted", [])
+    restricted_html = (
+        '<div class="flagrow">'
+        + "".join(f'<span class="flag-pill on">VI {escape(s)}</span>' for s in restricted)
+        + "</div>"
+        if restricted
+        else '<div style="font-size:12px;color:var(--ink-3)">VI·거래정지 종목 없음</div>'
+    )
+    flags = safety.get("flags", {})
+    flag_html = "".join(
+        f'<span class="flag-pill {"on" if flags.get(k) else ""}">{label}</span>'
+        for k, label in (("emergency_stop", "긴급정지"), ("kr_stop", "KR 정지"), ("us_stop", "US 정지"))
+    )
+    return (
+        '<div class="card" style="padding:16px 20px 18px">'
+        '<div class="mini-label" style="margin-bottom:10px">Safety Gate 소진율</div><div class="gate">'
+        f'<div><div class="cap"><span>일일 손실 한도</span><span class="num">{safety.get("daily_loss", 0):,} / {safety.get("daily_limit", 0):,} ₩</span></div>'
+        f'<div class="meter" style="margin-top:6px;background:linear-gradient(90deg,#0e9d81,#e6a23c 60%,#d84b40)"><span class="mk" style="left:{usage_pct}%"></span></div></div>'
+        f'<div><div class="mini-label" style="font-size:10px">종목당 비중 / 상한</div>{pos_rows}</div>'
+        f"<div>{restricted_html}</div>"
+        f'<div class="flagrow">{flag_html}</div>'
+        "</div></div>"
+    )
+
+
+def _risk_lines_card(extras: dict[str, Any]) -> str:
+    lines = extras.get("risk_lines") or []
+    if not lines:
+        body = '<tr><td colspan="4" style="text-align:center;color:var(--ink-3)">보유 종목 없음</td></tr>'
+    else:
+        def fmt(sym: str, v: float) -> str:
+            return f"{v:,.0f}" if sym.isdigit() else f"{v:,.2f}"
+
+        body = "".join(
+            f'<tr><td>{escape(r["symbol"])}</td>'
+            f'<td class="down">{fmt(r["symbol"], r["stop"])}</td>'
+            f'<td>{fmt(r["symbol"], r["current"])}</td>'
+            f'<td class="up">{fmt(r["symbol"], r["take"])}</td></tr>'
+            for r in lines
+        )
+    sl = lines[0]["stop_pct"] if lines else 0.0
+    tp = lines[0]["take_pct"] if lines else 0.0
+    return (
+        '<div class="card" style="padding:16px 20px 18px">'
+        f'<div class="mini-label" style="margin-bottom:10px">참고 손절/익절 라인 (−{sl * 100:.0f}% / +{tp * 100:.0f}%, 실제 청산은 전략이 결정)</div>'
+        '<div class="scroll"><table class="tbl"><thead><tr><th>종목</th><th>손절</th><th>현재가</th><th>익절</th></tr></thead>'
+        f"<tbody>{body}</tbody></table></div></div>"
+    )
+
+
+def _timeline_event(e: dict[str, Any]) -> str:
+    action = str(e.get("action", ""))
+    act_cls = "buy" if action == "BUY" else "sell"
+    time_kst = e["created_at"].astimezone(_KST)
+    price = f" @ {e['fill_price']:,.0f}" if e.get("fill_price") else ""
+    pnl = f" · {e['pnl_krw']:+,}₩" if e.get("pnl_krw") is not None else ""
+    detail = f"{e.get('quantity', '')}주{price}{pnl}"
+    return (
+        f'<div class="ev"><span class="tm">{time_kst:%H:%M}</span>'
+        f'<span class="act {act_cls}">{escape(action)}</span>'
+        f'<span><b>{escape(str(e.get("symbol", "")))}</b> {escape(detail)}</span></div>'
+    )
+
+
+def _extras_tail(extras: dict[str, Any]) -> str:
+    # 세션 상태 + 변동성(%B) 칩
+    calendar = extras.get("calendar") or {}
+    cal_chips = "".join(
+        f'<span class="chip">{escape(m)} {"장중" if (v or {}).get("open") else "장마감"}'
+        f'{" · 정규장" if (v or {}).get("regular") else ""}</span>'
+        for m, v in calendar.items()
+    ) or '<span class="chip">세션 정보 없음</span>'
+
+    bands = extras.get("bands") or []
+    band_chips = "".join(
+        f'<span class="chip">{escape(b["symbol"])} %B {b["pct_b"]:.2f}</span>' for b in bands
+    ) or '<span class="chip">밴드 데이터 없음</span>'
+
+    timeline = extras.get("timeline") or []
+    if timeline:
+        tl_html = f'<div class="tl">{"".join(_timeline_event(e) for e in timeline)}</div>'
+    else:
+        tl_html = '<div style="font-size:12.5px;color:var(--ink-3)">오늘 체결 없음</div>'
+
+    return (
+        '<div class="exgrid">'
+        '<div class="card" style="padding:16px 20px 18px"><div class="mini-label" style="margin-bottom:10px">세션 · 변동성(%B)</div>'
+        f'<div class="chips" style="margin-bottom:10px">{cal_chips}</div><div class="chips">{band_chips}</div></div>'
+        '<div class="card" style="padding:16px 20px 18px"><div class="mini-label" style="margin-bottom:10px">오늘 체결 타임라인</div>'
+        f"{tl_html}</div>"
+        "</div>"
+    )
+
+
+def _extras_section(extras: dict[str, Any] | None) -> str:
+    if not extras:
+        return ""
+    return (
+        _sec("03", "리스크 · 성과 확장 지표")
+        + _extras_kpis(extras)
+        + f'<div class="exgrid">{_gate_card(extras)}{_risk_lines_card(extras)}</div>'
+        + _extras_tail(extras)
+    )
+
+
 _NOTES = (
     '<div class="notes"><h4>리포트 생성 방식 · 주의</h4><ul>'
     "<li>본 리포트는 <code>core/report/generator.py</code> · <code>chart.py</code> · "
@@ -321,6 +490,7 @@ def render_market_report(
     portfolio: dict[str, Any],
     market_views: list[dict[str, Any]],
     chart_paths: list[str],
+    extras: dict[str, Any] | None = None,
 ) -> str:
     """시장 리포트(KR/US/ALL) HTML 문서. market_views는 시장별 뷰 dict 리스트."""
     sections = "".join(_market_section(v) for v in market_views)
@@ -331,6 +501,7 @@ def render_market_report(
         + f'<div class="markets">{sections}</div>'
         + _sec("02", "보유 종목 분석")
         + _holdings_card(portfolio)
+        + _extras_section(extras)
         + _charts_grid(chart_paths)
         + _NOTES
         + '<footer class="foot"><span>빈(Bin) · AI 자동 트레이딩 봇</span>'

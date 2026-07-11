@@ -19,6 +19,19 @@ def _stub_market_news(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(generator_module, "fetch_market_news", _no_news)
 
+    # 확장 지표는 여러 DB/토스 소스를 건드리므로 기본은 no-op(None)으로 둔다. 확장 지표를
+    # 검증하는 테스트는 본문에서 다시 setattr로 덮어쓴다.
+    async def _no_extras(*args, **kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(generator_module.report_extras, "gather_report_extras", _no_extras)
+
+    # 벤치마크 시계열 계산이 실제 토스 호출을 하지 않도록 기본 stub (필요한 테스트는 덮어씀).
+    async def _no_candles(symbol: str, timeframe: str) -> list[dict]:
+        return []
+
+    monkeypatch.setattr(generator_module.toss_market, "get_candles", _no_candles)
+
 
 @pytest.mark.asyncio
 async def test_generate_and_publish_renders_holdings_pnl_and_volume_charts(
@@ -505,6 +518,67 @@ async def test_generate_weekly_report_flags_no_sells_for_review(
     content = await generator_module.generate_weekly_report()
 
     assert "이번 주 체결된 매도가 없어" in content
+
+
+@pytest.mark.asyncio
+async def test_generate_and_publish_includes_extras(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """확장 지표(gather_report_extras 결과)가 마크다운·HTML 리포트에 실려야 한다."""
+    monkeypatch.setattr(settings, "DRY_RUN", False)
+    monkeypatch.setattr(settings, "SIMULATION", True)
+    monkeypatch.setattr(generator_module, "_REPORTS_DIR", tmp_path)
+
+    async def _get_watchlist(market: str) -> list[dict]:
+        return [{"symbol": "005930"}]
+
+    async def _collect_market_snapshot(market: str, symbols: list[str]) -> dict:
+        return {"prices": {"005930": {"price": 78_400}}, "holdings": [],
+                "exchange_rate_krw_usd": 1_384.0, "toss_popular_top10": [], "fear_greed_index": 50}
+
+    async def _get_portfolio_status(mode, market=None):  # noqa: ANN001
+        return {"holdings": [], "cashBufferKrw": 75_000, "cumulativePnlPct": 0.0,
+                "totalValueKrw": 500_000, "todayPnlKrw": 0}
+
+    sample_extras = {
+        "unrealized": {"total_krw": 12_345, "total_pct": 0.05, "rows": []},
+        "safety": {"daily_loss": 0, "daily_limit": 50_000, "daily_usage": 0.0, "cap": 0.5,
+                   "positions": [], "restricted": [], "flags": {}},
+        "ai": {"today_counts": {"BUY": 1, "HOLD": 0, "SELL": 0}, "latest": None,
+               "api_calls_today": 3, "api_cost_today_krw": 100, "api_cost_month_krw": 5_000},
+        "risk_lines": [], "calendar": {"KR": {"open": True, "regular": True}},
+        "alpha": None, "bands": [], "fx": None, "timeline": [],
+    }
+
+    async def _gather(*args, **kwargs) -> dict:
+        return sample_extras
+
+    published: dict = {}
+
+    async def _publish_event(event_type: str, **kwargs):
+        published.update(kwargs)
+
+    async def _insert(table: str, values: dict) -> dict:
+        return values
+
+    async def _snaps(limit: int = 30) -> list[dict]:
+        return []
+
+    monkeypatch.setattr(generator_module, "get_watchlist", _get_watchlist)
+    monkeypatch.setattr(generator_module, "collect_market_snapshot", _collect_market_snapshot)
+    monkeypatch.setattr(generator_module.fund_manager, "get_portfolio_status", _get_portfolio_status)
+    monkeypatch.setattr(generator_module.report_extras, "gather_report_extras", _gather)
+    monkeypatch.setattr(generator_module.db, "insert", _insert)
+    monkeypatch.setattr(generator_module.db, "get_recent_simulation_snapshots", _snaps)
+    monkeypatch.setattr(generator_module, "publish_event", _publish_event)
+
+    await generator_module.generate_and_publish("KR", "on_demand")
+
+    assert "15. 리스크 · 성과 확장 지표" in published["payload"]["contentMd"]
+    assert "미실현 손익: +12,345 KRW" in published["payload"]["contentMd"]
+    html = Path(published["payload"]["htmlPath"]).read_text(encoding="utf-8")
+    assert "리스크 · 성과 확장 지표" in html
+    assert "+12,345" in html
 
 
 def test_safe_market_label_rejects_path_traversal() -> None:

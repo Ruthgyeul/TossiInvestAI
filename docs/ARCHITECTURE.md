@@ -203,6 +203,7 @@ TossInvestAI/
 │   ├── report/
 │   │   ├── generator.py             # 리포트 텍스트(마크다운) 생성 + 발행
 │   │   ├── html.py                  # 자기완결 HTML 리포트 문서 생성 (그래프 base64 인라인)
+│   │   ├── extras.py                # 확장 지표 수집 (미실현 손익·Safety Gate·AI 결정·α·환율·체결 등)
 │   │   └── chart.py                 # matplotlib 그래프 생성
 │   │
 │   ├── db/

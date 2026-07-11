@@ -17,6 +17,7 @@ from core.market_data.news import fetch_market_news
 from core.market_data.watchlist import get_watchlist
 from core.models import Market
 from core.report import chart
+from core.report import extras as report_extras
 from core.report import html as report_html
 from core.toss import market as toss_market
 
@@ -506,6 +507,47 @@ def _one_line_summary(market: str, portfolio: dict) -> str:
     return f"{market} 금일 {pnl_desc} · 누적 {cum_pct:+.1%} · 보유 {len(portfolio['holdings'])}종목"
 
 
+def _render_extras_md(extras: dict) -> str:
+    """확장 지표의 compact 마크다운 요약 (docs/REPORT.md "확장 지표"). 전체 상세는 HTML 문서에."""
+    un = extras.get("unrealized") or {}
+    safety = extras.get("safety") or {}
+    ai = extras.get("ai") or {}
+    counts = ai.get("today_counts", {})
+    alpha = extras.get("alpha")
+    fx = extras.get("fx")
+    calendar = extras.get("calendar") or {}
+    timeline = extras.get("timeline") or []
+
+    lines = [
+        "",
+        "## 15. 리스크 · 성과 확장 지표",
+        f"미실현 손익: {un.get('total_krw', 0):+,} KRW ({un.get('total_pct', 0):+.1%})",
+        f"Safety Gate: 일일 손실 {safety.get('daily_loss', 0):,}/{safety.get('daily_limit', 0):,} KRW "
+        f"(소진 {safety.get('daily_usage', 0):.0%}) | 종목당 상한 {safety.get('cap', 0):.0%} | "
+        f"VI/거래정지 {', '.join(safety.get('restricted', [])) or '없음'}",
+        f"AI 결정(오늘): BUY {counts.get('BUY', 0)} · HOLD {counts.get('HOLD', 0)} · "
+        f"SELL {counts.get('SELL', 0)} | API {ai.get('api_calls_today', 0)}회 · "
+        f"이번달 비용 {ai.get('api_cost_month_krw', 0):,} KRW",
+    ]
+    if alpha:
+        lines.append(
+            f"초과수익 α: {alpha['alpha_pp']:+.1%}p (포트 {alpha['portfolio_pct']:+.1%} vs "
+            f"벤치 {alpha['benchmark_pct']:+.1%})"
+        )
+    if fx:
+        lines.append(
+            f"환율 민감도: USD/KRW {fx['usd_krw']:,.1f} | US 노출 {fx['us_exposure_krw']:,} KRW | "
+            f"1% 변동 시 {fx['sensitivity_1pct_krw']:+,} KRW"
+        )
+    session = " · ".join(
+        f"{m} {'장중' if (v or {}).get('open') else '장마감'}" for m, v in calendar.items()
+    )
+    if session:
+        lines.append(f"세션: {session}")
+    lines.append(f"오늘 체결: {len(timeline)}건")
+    return "\n".join(lines)
+
+
 async def generate_and_publish(
     market: Literal["KR", "US", "ALL"],
     report_type: ReportType,
@@ -547,6 +589,20 @@ async def generate_and_publish(
             for m, (snap, m_news) in market_inputs.items()
         ]
     )
+
+    # 확장 지표(미실현 손익·Safety Gate·AI 결정·α·환율·세션·체결 타임라인) — 실패해도
+    # 본문을 막지 않도록 방어적으로 수집한다 (docs/REPORT.md "확장 지표").
+    extras: dict | None = None
+    try:
+        benchmark_series = await _market_composite_series(markets[0])
+        snapshots_by_market = {m: snap for m, (snap, _n) in market_inputs.items()}
+        extras = await report_extras.gather_report_extras(
+            markets, snapshots_by_market, portfolio, mode, benchmark_series
+        )
+        if extras:
+            content_md += "\n\n" + _render_extras_md(extras)
+    except Exception as e:  # noqa: BLE001 — 확장 지표 실패가 리포트 발송을 막으면 안 된다
+        log.warning("report_extras_failed", error=str(e))
 
     _report_filename(market).write_text(content_md, encoding="utf-8")
 
@@ -623,6 +679,7 @@ async def generate_and_publish(
             portfolio=portfolio,
             market_views=market_views,
             chart_paths=chart_paths,
+            extras=extras,
         )
         html_path = _report_html_filename(market)
         html_path.write_text(html_content, encoding="utf-8")
