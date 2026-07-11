@@ -8,6 +8,12 @@ ExecStart=/home/ruthgyeul/TossInvestAI/venv/bin/python3 -m core.main
 Restart=always
 RestartSec=10
 Environment=TZ=Asia/Seoul
+# API 키·계좌 정보를 다루는 프로세스를 root로 돌리지 않는다 + 최소 권한 하드닝.
+User=ruthgyeul
+Group=ruthgyeul
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
 
 [Install]
 WantedBy=multi-user.target

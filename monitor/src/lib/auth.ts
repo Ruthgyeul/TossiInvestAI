@@ -128,7 +128,12 @@ export function verifySession(token: string | undefined, ip: string): boolean {
   if (!timingSafeEqualStr(sig, expectedSig)) return false;
 
   const payload = Buffer.from(payloadB64, "base64url").toString();
-  const [payloadIp, expStr] = payload.split(":");
+  // IPv6 주소는 ":"를 포함하므로 마지막 구분자 기준으로 잘라야 IP가 온전히 복원된다 —
+  // 앞에서 자르면 IPv6 세션의 IP 바인딩 비교가 항상 실패한다.
+  const sep = payload.lastIndexOf(":");
+  if (sep === -1) return false;
+  const payloadIp = payload.slice(0, sep);
+  const expStr = payload.slice(sep + 1);
   if (payloadIp !== ip) return false;
 
   const expiresAtMs = Number(expStr);

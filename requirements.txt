@@ -15,6 +15,7 @@ APScheduler>=3.11
 structlog>=26.1
 
 # 시장 데이터·분석
+defusedxml>=0.7             # 외부 RSS XML 파싱 — 엔티티 확장·XXE 차단 (core/market_data/news.py)
 pandas>=3.0
 ta>=0.11                     # RSI·MACD·EMA·볼린저밴드
 matplotlib>=3.11             # 리포트 그래프
@@ -34,4 +35,5 @@ pytest-asyncio>=1.4
 aioresponses>=0.7.9        # toss/client.py 등 aiohttp 호출 목업
 fakeredis>=2.36            # Redis 캐시·Rate Limit 로직 인메모리 테스트
 mypy>=2.1
+types-defusedxml>=0.7      # mypy용 defusedxml 스텁
 ruff>=0.15

@@ -8,6 +8,12 @@ ExecStart=/usr/bin/node dist/index.js
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
+# 봇 토큰·내부 API 토큰을 다루는 프로세스를 root로 돌리지 않는다 + 최소 권한 하드닝.
+User=ruthgyeul
+Group=ruthgyeul
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
 
 [Install]
 WantedBy=multi-user.target

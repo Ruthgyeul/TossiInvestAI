@@ -6,10 +6,13 @@ US는 Yahoo Finance RSS 헤드라인 피드. `_infer_market`과 동일한 규칙
 """
 
 import json
-import xml.etree.ElementTree as ET
+from urllib.parse import quote
+from xml.etree.ElementTree import ParseError
 
 import aiohttp
 import structlog
+from defusedxml import ElementTree as ET
+from defusedxml.common import DefusedXmlException
 
 from core.db.redis import get_redis
 from core.gateway.gemini import gemini_gateway
@@ -22,16 +25,21 @@ _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=5)
 
 
 def _feed_url(symbol: str) -> str:
-    """숫자 종목코드는 KR(Google News RSS 검색), 알파벳 티커는 US(Yahoo Finance RSS)."""
+    """숫자 종목코드는 KR(Google News RSS 검색), 알파벳 티커는 US(Yahoo Finance RSS).
+
+    symbol은 URL 인코딩해 쿼리 파라미터 주입(&·= 등)이 불가능하게 한다.
+    """
+    encoded = quote(symbol, safe="")
     if symbol.isdigit():
-        return f"https://news.google.com/rss/search?q={symbol}&hl=ko&gl=KR&ceid=KR:ko"
-    return f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={symbol}&region=US&lang=en-US"
+        return f"https://news.google.com/rss/search?q={encoded}&hl=ko&gl=KR&ceid=KR:ko"
+    return f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={encoded}&region=US&lang=en-US"
 
 
 def _parse_rss_titles(xml_text: str, limit: int) -> list[str]:
+    # defusedxml: 외부 피드 XML의 엔티티 확장(billion laughs)·외부 엔티티(XXE) 공격을 차단한다.
     try:
         root = ET.fromstring(xml_text)
-    except ET.ParseError:
+    except (ParseError, DefusedXmlException):
         return []
     titles = [item.findtext("title") for item in root.iter("item")]
     return [title.strip() for title in titles if title and title.strip()][:limit]

@@ -600,6 +600,24 @@ async def test_post_sell_order_rejects_negative_price(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
+async def test_post_buy_order_rejects_malformed_symbol(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _execute_should_not_be_called(decision, mode, **kwargs):  # noqa: ANN001
+        raise AssertionError("종목 코드 검증에 실패하면 execute()를 호출하면 안 된다")
+
+    monkeypatch.setattr(routes, "execute", _execute_should_not_be_called)
+
+    for bad_symbol in ["../etc", "005930;DROP", "A" * 13, ""]:
+        request = _mocked_post_request(
+            "/api/v1/orders/buy", {"symbol": bad_symbol, "quantity": 1}
+        )
+        response = await routes.post_buy_order(request)
+        body = json_lib.loads(response.body)
+
+        assert response.status == 400
+        assert body["approved"] is False
+
+
+@pytest.mark.asyncio
 async def test_post_buy_order_rejects_missing_symbol(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _execute_should_not_be_called(decision, mode, **kwargs):  # noqa: ANN001
         raise AssertionError("바디 검증에 실패하면 execute()를 호출하면 안 된다")
