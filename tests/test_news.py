@@ -88,6 +88,13 @@ def test_feed_url_picks_google_news_for_us_lowercase_stays_us() -> None:
     assert news._is_kr_symbol("005930")
 
 
+def test_all_market_feeds_use_https() -> None:
+    """보안 감사 M-01 — 평문 HTTP 피드는 MITM 헤드라인 주입 채널이 되므로 금지한다."""
+    for feeds in news._MARKET_FEEDS.values():
+        for url in feeds:
+            assert url.startswith("https://"), f"평문 HTTP 피드 금지: {url}"
+
+
 def test_merge_headlines_dedups_and_preserves_order() -> None:
     merged = news._merge_headlines(
         ["A", "B"],
@@ -109,12 +116,11 @@ async def test_fetch_market_news_merges_feeds_and_caches(fake_redis) -> None:  #
     </channel></rss>"""
 
     with aioresponses() as mocked:
-        # 4개 KR 경제 피드 중 2개는 정상, 2개는 장애 — 부분 실패에도 병합돼야 한다.
+        # 3개 KR 경제 피드 중 2개는 정상, 1개는 장애 — 부분 실패에도 병합돼야 한다.
         feeds = news._KR_ECONOMY_FEEDS
         mocked.get(feeds[0], body=feed_a)
         mocked.get(feeds[1], body=feed_b)
         mocked.get(feeds[2], status=500)
-        mocked.get(feeds[3], exception=Exception("boom"))
         articles = await news.fetch_market_news("KR")
 
     assert articles == [

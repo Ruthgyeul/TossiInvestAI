@@ -32,11 +32,14 @@ _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=5)
 
 # KR 시장 전반 경제 뉴스 RSS 피드 — 종목 무관 매크로 헤드라인. 무료·API 키 불필요.
 # 개별 피드 장애는 병합 과정에서 조용히 무시되므로 일부 소스가 죽어도 나머지로 동작한다.
+#
+# 전부 HTTPS만 사용한다 — 평문 HTTP 피드는 경로상 공격자가 헤드라인을 변조해
+# Gemini 요약 → Claude 결정 프롬프트로 주입할 수 있는 채널이 된다(보안 감사 M-01).
+# HTTPS를 제공하지 않는 소스(서울경제 rss.hankooki.com)는 목록에서 제외했다.
 _KR_ECONOMY_FEEDS = (
-    "https://www.hankyung.com/feed/economy",           # 한국경제
-    "http://file.mk.co.kr/news/rss/rss_30100041.xml",  # 매일경제
-    "http://rss.hankooki.com/economy/sk00_list.xml",   # 서울경제
-    "https://rss.mt.co.kr/mt_news.xml",                # 머니투데이
+    "https://www.hankyung.com/feed/economy",    # 한국경제
+    "https://www.mk.co.kr/rss/30100041/",       # 매일경제 (경제)
+    "https://rss.mt.co.kr/mt_news.xml",         # 머니투데이
 )
 
 # 시장별 전반 뉴스 피드 매핑. US는 종목별 Yahoo Finance 피드로 충분해 전반 피드를 두지 않는다.

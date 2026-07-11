@@ -1,4 +1,6 @@
 // core → discord-bot 트레이딩 이벤트 구독. Redis `pubsub:events` 채널 단방향 푸시 (docs/INTERNAL_API.md).
+import path from "node:path";
+
 import { Client } from "discord.js";
 import { Redis } from "ioredis";
 
@@ -117,6 +119,20 @@ async function handleHealthAlert(client: Client, event: PubSubEvent): Promise<vo
   await channel?.send({ embeds: [embed] });
 }
 
+/**
+ * 리포트 첨부로 허용되는 경로인지 검증한다 — core는 항상 `logs/reports/` 하위의 상대
+ * 경로만 발행한다 (core/report/chart.py CHARTS_DIR, generator.py _REPORTS_DIR).
+ * Redis에 publish할 수 있는 다른 주체가 `/home/…/.env` 같은 임의 경로를 실어 보내
+ * 파일이 Discord로 유출되는 것을 막는다 (보안 감사 L-01, 심층 방어).
+ */
+export function isAllowedReportAttachment(rawPath: string): boolean {
+  if (typeof rawPath !== "string" || rawPath.length === 0) return false;
+  if (path.isAbsolute(rawPath) || rawPath.includes("\0")) return false;
+  // normalize가 ".." 세그먼트를 접어 주므로, 접은 뒤에도 logs/reports/ 아래면 안전하다.
+  const normalized = path.posix.normalize(rawPath.replaceAll("\\", "/"));
+  return normalized.startsWith("logs/reports/") && !normalized.includes("..");
+}
+
 async function handleReportReady(client: Client, event: PubSubEvent): Promise<void> {
   const payload = event.payload as {
     market: "KR" | "US" | "ALL";
@@ -138,7 +154,12 @@ async function handleReportReady(client: Client, event: PubSubEvent): Promise<vo
   if (payload.htmlPath) {
     attachmentPaths.push(payload.htmlPath);
   }
-  const files = attachmentPaths.map((path) => ({ attachment: path }));
+  const allowedPaths = attachmentPaths.filter((p) => {
+    if (isAllowedReportAttachment(p)) return true;
+    console.error("report_attachment_rejected", "logs/reports/ 밖의 경로는 첨부하지 않는다:", p);
+    return false;
+  });
+  const files = allowedPaths.map((p) => ({ attachment: p }));
 
   // /report가 발급한 jobId(correlation_id)와 일치하는 인터랙션이 있으면 그 자리에서 마무리하고,
   // 없으면(봇 재시작 등) #stock-analyze에 게시한다 (docs/INTERNAL_API.md "동기 vs 지연 응답").

@@ -1,11 +1,14 @@
 # AI Gateway
 anthropic>=0.116
-google-genai>=1.75           # Gemini (google-generativeai는 EOL — google-genai로 대체)
-openai>=2.44                 # DeepSeek (OpenAI 호환)
+google-genai>=2.11           # Gemini (google-generativeai는 EOL — google-genai로 대체)
+openai>=2.45                 # DeepSeek (OpenAI 호환)
 
 # 설정·비동기·DB
 pydantic-settings>=2.14
-aiohttp>=3.9,<3.10           # aioresponses(0.7.x)가 3.10+의 ClientResponse 시그니처를 아직 지원하지 않음
+# aiohttp 3.9.x에는 알려진 CVE(요청 스머글링 CVE-2024-52304 등)가 있어 3.12.14+로 올린다.
+# 상한 <3.14: aioresponses 0.7.9가 3.14의 ClientResponse.__init__ 시그니처 변경을 아직
+# 지원하지 않는다 — aioresponses가 대응하면 상한을 함께 올린다 (tests/test_toss_*.py로 검증).
+aiohttp>=3.12.14,<3.14
 asyncpg>=0.31
 redis>=8.0                   # asyncio 지원이 기본 내장되어 [asyncio] extra 불필요
 SQLAlchemy[asyncio]>=2.0.51
@@ -36,4 +39,5 @@ aioresponses>=0.7.9        # toss/client.py 등 aiohttp 호출 목업
 fakeredis>=2.36            # Redis 캐시·Rate Limit 로직 인메모리 테스트
 mypy>=2.1
 types-defusedxml>=0.7      # mypy용 defusedxml 스텁
+types-psutil>=7.0          # mypy용 psutil 스텁
 ruff>=0.15
