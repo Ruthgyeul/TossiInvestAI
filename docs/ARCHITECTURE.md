@@ -201,7 +201,8 @@ TossInvestAI/
 │   │   └── watchlist.py             # 관심 종목 관리
 │   │
 │   ├── report/
-│   │   ├── generator.py             # 리포트 텍스트 생성
+│   │   ├── generator.py             # 리포트 텍스트(마크다운) 생성 + 발행
+│   │   ├── html.py                  # 자기완결 HTML 리포트 문서 생성 (그래프 base64 인라인)
 │   │   └── chart.py                 # matplotlib 그래프 생성
 │   │
 │   ├── db/
@@ -284,7 +285,7 @@ TossInvestAI/
 | `simulation_daily_pnl` | 시뮬레이션 가상 일별 손익 |
 | `simulation_portfolio_snapshots` | 시뮬레이션 포트폴리오 스냅샷 |
 | `live_portfolio_snapshots` | 실전 포트폴리오 스냅샷 (자산 추이 차트용) |
-| `reports` | 정기/즉시 리포트 발행 기록 — 전체 마크다운은 `logs/reports/*.md`에만 남고, 여기는 모니터(`docs/MONITOR.md`) 서브스트립이 쓰는 한 줄 요약만 감사 가능하게 영속화 |
+| `reports` | 정기/즉시 리포트 발행 기록 — 전체 문서는 `logs/reports/*.md`(마크다운)·`*.html`(자기완결 HTML, docs/REPORT.md)에만 남고, 여기는 모니터(`docs/MONITOR.md`) 서브스트립이 쓰는 한 줄 요약만 감사 가능하게 영속화 |
 
 > `daily_pnl`/`simulation_daily_pnl`은 스키마상 존재하지만 실제 쓰기 경로가
 > 없다 — 모니터의 일별 손익 차트는 대신 `live_portfolio_snapshots`(또는

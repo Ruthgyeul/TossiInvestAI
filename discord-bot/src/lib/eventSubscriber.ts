@@ -123,6 +123,7 @@ async function handleReportReady(client: Client, event: PubSubEvent): Promise<vo
     reportType: ReportEmbedData["reportType"];
     contentMd: string;
     chartPaths: string[];
+    htmlPath?: string;
   };
   const data: ReportEmbedData = {
     market: payload.market,
@@ -131,7 +132,13 @@ async function handleReportReady(client: Client, event: PubSubEvent): Promise<vo
     chartFilePaths: payload.chartPaths,
   };
   const embed = buildReportEmbed(data);
-  const files = (payload.chartPaths ?? []).map((path) => ({ attachment: path }));
+  // 그래프 PNG + 자기완결 HTML 리포트 문서(있으면)를 첨부한다. HTML은 그래프를 base64로
+  // 인라인해 한 파일로 열린다 (core/report/html.py, docs/REPORT.md "HTML 리포트 문서").
+  const attachmentPaths = [...(payload.chartPaths ?? [])];
+  if (payload.htmlPath) {
+    attachmentPaths.push(payload.htmlPath);
+  }
+  const files = attachmentPaths.map((path) => ({ attachment: path }));
 
   // /report가 발급한 jobId(correlation_id)와 일치하는 인터랙션이 있으면 그 자리에서 마무리하고,
   // 없으면(봇 재시작 등) #stock-analyze에 게시한다 (docs/INTERNAL_API.md "동기 vs 지연 응답").
